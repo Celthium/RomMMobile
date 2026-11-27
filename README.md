@@ -68,7 +68,7 @@ The bar at the bottom always shows the buttons that are active on the current sc
 
 ## Documentation
 
-The reading order is the number order, like the three trials to become a pirate. Except here there are six. `docs/it/` holds the original Italian versions, which predate this fork's changes.
+The reading order is the number order, like the three trials to become a pirate. Except here there are six.
 
 | File | Contents |
 |---|---|
