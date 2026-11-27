@@ -39,6 +39,17 @@ object UrlNormalizer {
         return h.startsWith("[fd") || h.startsWith("[fe80") || h.startsWith("fd") || h.startsWith("fe80")
     }
 
+    /**
+     * URL of a file RomM serves (`/assets/romm/resources/...?ts=2025-01-01 12:00:00`). Already
+     * absolute values (an external `url_cover`) pass through. The `ts` cache-buster is a raw
+     * datetime with a space in it, so the result goes through OkHttp's parser, which
+     * percent-encodes it: a literal space in a URL is exactly what some proxies answer 400 to.
+     */
+    fun resource(base: String, path: String): String {
+        val raw = if (path.startsWith("http://") || path.startsWith("https://")) path else join(base, path)
+        return raw.toHttpUrlOrNull()?.toString() ?: raw.replace(" ", "%20")
+    }
+
     /** `{base}{path}` with exactly one slash between the two. */
     fun join(base: String, path: String): String = base.trimEnd('/') + "/" + path.trimStart('/')
 }

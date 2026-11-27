@@ -24,6 +24,14 @@ data class Platform(
     val sizeBytes: Long,
 ) {
     fun iconUrl(base: String?): String? = base?.let { UrlNormalizer.join(it, "assets/platforms/$slug.ico") }
+
+    /**
+     * Same lookup order as the RomM web app (v2 `platformIcons.ts`): the slug first, then the
+     * folder slug, then RomM's own generic icon. Fed to [com.rommmobile.app.core.design.PlatformIcon],
+     * which walks the list on 404 instead of falling straight back to a Material glyph.
+     */
+    fun iconUrls(base: String?): List<String> = if (base == null) emptyList() else listOf(slug, fsSlug, "default")
+        .map { it.lowercase() }.distinct().map { UrlNormalizer.join(base, "assets/platforms/$it.ico") }
 }
 
 @Immutable
@@ -78,12 +86,52 @@ data class Rom(
     val files: List<RomFile>,
     val siblings: List<Sibling>,
     val missingFromFs: Boolean,
+    /** External cover (IGDB, ScreenScraper...) RomM recorded; last resort when its own copy fails. */
+    val urlCover: String? = null,
+    /** Absolute screenshot URLs. Only the detail endpoint is asked for them, so lists leave it empty. */
+    val screenshots: List<String> = emptyList(),
+    /** Absolute video URLs: the scraped clip, then any trailer sitting in the game folder. */
+    val videos: List<String> = emptyList(),
+    /** Scraped logo (transparent PNG), detail only. */
+    val logo: String? = null,
+    /** "1-8 players" style count from the metadata, detail only. */
+    val players: String? = null,
 ) {
+    /**
+     * Every cover worth trying, best first, the way the web app falls back
+     * (`path_cover_large` -> `url_cover` -> generated art). [preferLarge] puts the 1080p copy
+     * ahead of the thumbnail for anything bigger than a list row.
+     */
+    fun coverCandidates(preferLarge: Boolean = true): List<String> =
+        (if (preferLarge) listOf(coverLarge, coverSmall, urlCover) else listOf(coverSmall, coverLarge, urlCover))
+            .filterNotNull().filter { it.isNotBlank() }.distinct()
+
     /** Region badge like the web app: first region, upper-cased, max 3 chars. */
     val regionBadge: String? get() = regions.firstOrNull()?.uppercase()?.take(3)?.takeIf { it.isNotBlank() }
 
+    /**
+     * RomM's "nested single file": a folder holding ONE game file plus extras in sub-folders
+     * (`Bloodborne/` with `dlc/` and `update/`). RomM reports `has_multiple_files = false`, but
+     * asking for the ROM's content without file ids streams a zip of the whole folder - a 31 GB
+     * archive the app used to save as an extension-less file. Only known once the detail (with
+     * its file list) is loaded.
+     */
+    val isNestedSingle: Boolean get() = !hasMultipleFiles && files.size > 1
+
+    /** The game itself inside a nested folder: top-level, category game (or none), the biggest. */
+    val mainFile: RomFile? get() =
+        files.filter { (it.category == null || it.category == GAME) && it.isTopLevel }.maxByOrNull { it.sizeBytes }
+            ?: files.filter { it.category == null || it.category == GAME }.maxByOrNull { it.sizeBytes }
+
+    /** DLC, updates, mods, patches, translations... everything RomM filed beside the game. */
+    val extraFiles: List<RomFile> get() = files.filter { it.category != null && it.category != GAME }
+
     /** Name RomM would give the download: the archive name for multi-file games. */
-    val downloadFileName: String get() = if (hasMultipleFiles) "$fsNameNoExt.zip" else fsName
+    val downloadFileName: String get() = when {
+        hasMultipleFiles -> "$fsNameNoExt.zip"
+        isNestedSingle -> mainFile?.fileName ?: fsName
+        else -> fsName
+    }
 
     /** Key used to match local files regardless of compression: lower-case, no extension. */
     val nameKey: String get() = nameKeyOf(fsName)
@@ -98,6 +146,7 @@ data class Rom(
             return s
         }
         private val ARCHIVE_EXTS = listOf(".zip", ".7z", ".rar")
+        const val GAME = "game"
     }
 }
 
@@ -137,7 +186,7 @@ data class Collection(
     val isFavorite: Boolean,
 ) {
     val key: String get() = "${kind.name.lowercase()}:$remoteId"
-    fun coverUrls(base: String?): List<String> = if (base == null) emptyList() else coverPaths.map { UrlNormalizer.join(base, it) }
+    fun coverUrls(base: String?): List<String> = if (base == null) emptyList() else coverPaths.map { UrlNormalizer.resource(base, it) }
     fun toSource(): LibrarySource = when (kind) {
         CollectionKind.USER -> LibrarySource.ByCollection(remoteId.toInt())
         CollectionKind.VIRTUAL -> LibrarySource.ByVirtualCollection(remoteId)
@@ -213,8 +262,8 @@ fun RomEntity.toModel(base: String?, json: Json): Rom = Rom(
     fsExtension = fsExtension,
     sizeBytes = sizeBytes,
     // Server cache first (includes user-uploaded covers), external CDN only as fallback.
-    coverSmall = coverSmallPath?.let { p -> base?.let { UrlNormalizer.join(it, p) } } ?: urlCover,
-    coverLarge = coverLargePath?.let { p -> base?.let { UrlNormalizer.join(it, p) } } ?: urlCover,
+    coverSmall = coverSmallPath?.let { p -> base?.let { UrlNormalizer.resource(it, p) } } ?: urlCover,
+    coverLarge = coverLargePath?.let { p -> base?.let { UrlNormalizer.resource(it, p) } } ?: urlCover,
     regions = regions.unpack(),
     languages = languages.unpack(),
     revision = revision,
@@ -231,6 +280,7 @@ fun RomEntity.toModel(base: String?, json: Json): Rom = Rom(
     files = filesJson?.let { runCatching { json.decodeFromString<List<RomFile>>(it) }.getOrNull() } ?: emptyList(),
     siblings = siblingsJson?.let { runCatching { json.decodeFromString<List<Sibling>>(it) }.getOrNull() } ?: emptyList(),
     missingFromFs = missingFromFs,
+    urlCover = urlCover,
 )
 
 fun CollectionEntity.toModel() = Collection(kind, remoteId, name, description, romCount, coverPaths.unpack(), virtualType, isFavorite)

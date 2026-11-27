@@ -1,5 +1,6 @@
 package com.rommmobile.app.feature.main
 
+import com.rommmobile.app.core.design.ExtendUnderNavBar
 import com.rommmobile.app.feature.controls.ButtonMapScreen
 import android.app.Activity
 import androidx.compose.foundation.background
@@ -54,7 +55,9 @@ fun RomMRoot(intentEpoch: Int = 0) {
     val colors = RommTheme.colors
 
     CompositionLocalProvider(LocalGamepad provides appVm.gamepad) {
-        Box(Modifier.fillMaxSize().background(colors.background)) {
+        // No background here: RommTheme already paints the page, and the blurred cover backdrop
+        // sits between the two. An opaque box at this level hid it on every screen.
+        Box(Modifier.fillMaxSize()) {
             when (start) {
                 StartDestination.LOADING -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 else -> AppNavHost(appVm, start, intentEpoch)
@@ -139,39 +142,47 @@ private fun AppNavHost(appVm: AppViewModel, start: StartDestination, intentEpoch
         popExitTransition = { androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)) },
     ) {
         composable<OnboardingRoute> {
-            OnboardingScreen(onDone = { navController.navigate(HomeRoute) { popUpTo(0) { inclusive = true } } })
+            ExtendUnderNavBar {
+                OnboardingScreen(onDone = { navController.navigate(HomeRoute) { popUpTo(0) { inclusive = true } } })
+            }
         }
         composable<LoginRoute> {
             LoginScreen(onDone = { navController.navigate(HomeRoute) { popUpTo(0) { inclusive = true } } })
         }
         composable<HomeRoute> {
-            MainScaffold(
-                appVm = appVm,
-                onOpenLibrary = { route -> gate.go(route) },
-                onOpenGame = { id -> gate.go(GameRoute(id)) },
-                onOpenDownloads = { gate.go(DownloadsRoute) },
-                onOpenSettings = { gate.go(SettingsRoute) },
-            )
+            ExtendUnderNavBar {
+                MainScaffold(
+                    appVm = appVm,
+                    onOpenLibrary = { route -> gate.go(route) },
+                    onOpenGame = { id -> gate.go(GameRoute(id)) },
+                    onOpenDownloads = { gate.go(DownloadsRoute) },
+                    onOpenSettings = { gate.go(SettingsRoute) },
+                )
+            }
         }
         composable<LibraryRoute> { entry ->
             val route = entry.toRoute<LibraryRoute>()
-            LibraryScreen(
-                source = route.toSource(),
-                title = route.title,
-                onlyPresent = route.onlyPresent,
-                onBack = { gate.pop() },
-                onOpenGame = { id -> gate.go(GameRoute(id)) },
-                onOpenDownloads = { gate.go(DownloadsRoute) },
-            )
+            ExtendUnderNavBar {
+                LibraryScreen(
+                    source = route.toSource(),
+                    title = route.title,
+                    onlyPresent = route.onlyPresent,
+                    onBack = { gate.pop() },
+                    onOpenGame = { id -> gate.go(GameRoute(id)) },
+                    onOpenDownloads = { gate.go(DownloadsRoute) },
+                )
+            }
         }
         composable<GameRoute> { entry ->
             val route = entry.toRoute<GameRoute>()
-            GameDetailScreen(
-                romId = route.id,
-                onBack = { gate.pop() },
-                onOpenGame = { id -> gate.go(GameRoute(id)) },
-                onOpenDownloads = { gate.go(DownloadsRoute) },
-            )
+            ExtendUnderNavBar {
+                GameDetailScreen(
+                    romId = route.id,
+                    onBack = { gate.pop() },
+                    onOpenGame = { id -> gate.go(GameRoute(id)) },
+                    onOpenDownloads = { gate.go(DownloadsRoute) },
+                )
+            }
         }
         composable<DownloadsRoute> { DownloadsScreen(onBack = { gate.pop() }) }
         composable<SettingsRoute> {

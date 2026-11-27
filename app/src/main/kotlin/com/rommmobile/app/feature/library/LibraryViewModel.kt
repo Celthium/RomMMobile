@@ -18,6 +18,7 @@ import com.rommmobile.app.data.repo.DownloadRepository
 import com.rommmobile.app.data.repo.LibraryMeta
 import com.rommmobile.app.data.repo.LibraryQuery
 import com.rommmobile.app.data.repo.LibrarySource
+import com.rommmobile.app.feature.main.key
 import com.rommmobile.app.data.repo.LocalLibraryRepository
 import com.rommmobile.app.data.repo.Rom
 import com.rommmobile.app.data.repo.RomRepository
@@ -260,7 +261,18 @@ class LibraryViewModel @AssistedInject constructor(
     fun chooseFolder(relDir: String) = viewModelScope.launch { enqueue.chooseCandidate(relDir) }
     fun confirmRedownload() = viewModelScope.launch { enqueue.confirmRedownload() }
 
+    /** X on a card: the same download as the game page's button, without opening the page. */
+    fun quickDownload(rom: com.rommmobile.app.data.repo.Rom) = viewModelScope.launch { enqueue.enqueue(rom) }
+
     fun platformIconUrl(slug: String): String? = baseUrl.value?.let { UrlNormalizer.join(it, "assets/platforms/$slug.ico") }
+
+    /** Identifies this list for [com.rommmobile.app.core.design.CoverRatios] cell shapes. */
+    val slotKey: String get() = source.key
+
+    /** The icon, then RomM's generic one, so a custom platform still gets a picture. */
+    fun platformIconUrls(slug: String): List<String> = baseUrl.value?.let { b ->
+        listOf(slug.lowercase(), "default").distinct().map { UrlNormalizer.join(b, "assets/platforms/$it.ico") }
+    } ?: emptyList()
 
     /* ---------------- alphabet ---------------- */
 

@@ -8,7 +8,6 @@
         <item name="android:colorPrimary">@color/romm_primary</item>
         <item name="android:colorAccent">@color/romm_primary</item>
         <item name="android:windowSplashScreenBackground">@color/romm_background</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
-        <item name="android:windowSplashScreenIconBackgroundColor">@color/ic_launcher_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
     </style>
 </resources>

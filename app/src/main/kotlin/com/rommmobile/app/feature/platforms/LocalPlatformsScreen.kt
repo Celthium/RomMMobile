@@ -1,5 +1,6 @@
 package com.rommmobile.app.feature.platforms
 
+import com.rommmobile.app.core.design.bottomOverlayPadding
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
@@ -146,7 +147,7 @@ fun LocalPlatformsScreen(appVm: AppViewModel, onOpenLibrary: (LibraryRoute) -> U
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(columns),
                         state = state,
-                        contentPadding = PaddingValues(layout.padding),
+                        contentPadding = PaddingValues(start = layout.margin, top = layout.padding, end = layout.margin, bottom = layout.padding + bottomOverlayPadding),
                         horizontalArrangement = Arrangement.spacedBy(layout.gap),
                         verticalArrangement = Arrangement.spacedBy(layout.gap),
                         modifier = Modifier.fillMaxSize().focusGroup().gridDpadNavigation(gridFocus).rightStickScroll(state),

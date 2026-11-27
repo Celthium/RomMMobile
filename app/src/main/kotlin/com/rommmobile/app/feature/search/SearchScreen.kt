@@ -20,7 +20,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import com.rommmobile.app.core.design.RommSearchField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -91,25 +91,19 @@ fun SearchScreen(onOpenGame: (Int) -> Unit, onOpenDownloads: () -> Unit) {
 
     Column(Modifier.fillMaxSize()) {
         RommTopBar(title = stringResource(R.string.section_search))
-        OutlinedTextField(
+        RommSearchField(
             value = text,
             onValueChange = { text = it; vm.setSearchTerm(it) },
-            singleLine = true,
-            placeholder = { Text(stringResource(R.string.search_placeholder)) },
-            leadingIcon = { Icon(Icons.Rounded.Search, null) },
-            trailingIcon = {
-                if (text.isNotEmpty()) IconButton(onClick = { text = ""; vm.setSearchTerm("") }) { Icon(Icons.Rounded.Close, stringResource(R.string.action_clear)) }
-            },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { keyboard?.hide(); searchVm.remember(text) }),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = layout.padding, vertical = 4.dp).focusRequester(fieldFr).gamepadTextField(MaterialTheme.shapes.medium),
+            placeholder = stringResource(R.string.search_placeholder),
+            onSearch = { keyboard?.hide(); searchVm.remember(text) },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = layout.margin, vertical = 8.dp).focusRequester(fieldFr).gamepadTextField(PillShape),
         )
         if (text.trim().length < 2) {
             if (recent.isEmpty()) {
                 EmptyState(Icons.Rounded.Search, stringResource(R.string.search_hint_title), subtitle = stringResource(R.string.search_hint_body))
             } else {
                 SectionHeader(stringResource(R.string.search_recent))
-                FlowRow(Modifier.padding(horizontal = layout.padding), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(Modifier.padding(horizontal = layout.margin), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     recent.forEach { term ->
                         Row(
                             Modifier

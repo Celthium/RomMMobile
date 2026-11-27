@@ -19,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -134,16 +135,16 @@ fun FirmwareScreen(onBack: () -> Unit) {
         when {
             p == null -> {
                 if (platforms.isEmpty()) EmptyState(Icons.Rounded.Memory, stringResource(R.string.bios_empty), subtitle = stringResource(R.string.bios_empty_hint))
-                else LazyColumn(state = listState, modifier = Modifier.fillMaxSize().rightStickScroll(listState), contentPadding = PaddingValues(4.dp)) {
+                else LazyColumn(state = listState, modifier = Modifier.fillMaxSize().rightStickScroll(listState), contentPadding = PaddingValues(vertical = 4.dp)) {
                     item { Text(stringResource(R.string.bios_intro), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceMuted, modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)) }
                     items(platforms, key = { it.id }) { plat ->
-                        SettingRow(title = plat.name, subtitle = stringResource(R.string.bios_count, plat.firmwareCount), onClick = { vm.select(plat) }) { Icon(Icons.Rounded.Memory, null, tint = colors.primaryLighten) }
+                        SettingRow(title = plat.name, subtitle = pluralStringResource(R.plurals.n_files, plat.firmwareCount, plat.firmwareCount), onClick = { vm.select(plat) }) { Icon(Icons.Rounded.Memory, null, tint = colors.primaryLighten) }
                     }
                 }
             }
             error != null && items == null -> ErrorState(error!!.userMessage(context), onRetry = { vm.select(p) })
             items == null -> Text(stringResource(R.string.loading), modifier = Modifier.padding(14.dp), color = colors.onSurfaceMuted)
-            else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize().rightStickScroll(listState), contentPadding = PaddingValues(4.dp)) {
+            else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize().rightStickScroll(listState), contentPadding = PaddingValues(vertical = 4.dp)) {
                 items(items!!, key = { it.dto.id }) { item ->
                     SettingRow(
                         title = item.dto.fileName,

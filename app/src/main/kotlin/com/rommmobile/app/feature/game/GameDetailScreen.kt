@@ -1,6 +1,66 @@
 package com.rommmobile.app.feature.game
 
+import com.rommmobile.app.core.design.dpadScroll
+import com.rommmobile.app.core.design.LocalNavBarInset
+import androidx.compose.ui.graphics.graphicsLayer
+import com.rommmobile.app.core.input.rememberHasGamepad
+import com.rommmobile.app.core.design.KeycapGlyph
+import com.rommmobile.app.core.design.FaceButtonsGlyph
+import com.rommmobile.app.core.design.PadButton
 import android.content.Context
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import coil3.compose.AsyncImage
+import com.rommmobile.app.core.design.ArtShapeLarge
+import com.rommmobile.app.core.design.SetBackdrop
+import com.rommmobile.app.feature.dualscreen.LocalDualScreen
+import com.rommmobile.app.core.design.CoverRatios
+import com.rommmobile.app.core.design.DialogPadRemap
+import com.rommmobile.app.core.design.PlatformIcon
+import com.rommmobile.app.core.design.gamepadFocus
+import com.rommmobile.app.core.input.ModalScope
+import com.rommmobile.app.core.network.ServerStore
+import com.rommmobile.app.core.network.UrlNormalizer
+import com.rommmobile.app.core.util.Flags
+import com.rommmobile.app.feature.library.COVER_RATIO
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -75,6 +135,8 @@ import com.rommmobile.app.data.db.DownloadState
 import com.rommmobile.app.data.repo.DownloadRepository
 import com.rommmobile.app.data.repo.LocalLibraryRepository
 import com.rommmobile.app.data.repo.Rom
+import com.rommmobile.app.core.design.gamepadFocusRow
+import com.rommmobile.app.data.repo.RomFile
 import com.rommmobile.app.data.repo.RomRepository
 import com.rommmobile.app.feature.downloads.DownloadMiniBar
 import com.rommmobile.app.feature.downloads.EnqueueController
@@ -111,6 +173,7 @@ class GameViewModel @Inject constructor(
     private val toaster: Toaster,
     downloads: DownloadRepository,
     val enqueue: EnqueueController,
+    private val serverStore: ServerStore,
 ) : ViewModel() {
     private val romId = handle.toRoute<GameRoute>().id
 
@@ -127,6 +190,11 @@ class GameViewModel @Inject constructor(
     }.sample(250).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     init { load() }
+
+    /** Same order as the web app: slug, then RomM's generic icon. */
+    fun platformIconUrls(slug: String): List<String> = serverStore.config.value.activeUrl?.let { b ->
+        listOf(slug.lowercase(), "default").distinct().map { UrlNormalizer.join(b, "assets/platforms/$it.ico") }
+    } ?: emptyList()
 
     fun load() = viewModelScope.launch {
         // Show the cached record instantly, then replace it with the fresh one.
@@ -162,31 +230,68 @@ fun GameDetailScreen(romId: Int, onBack: () -> Unit, onOpenGame: (Int) -> Unit, 
     val redownload by vm.enqueue.confirmRedownload.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val layout = RommTheme.layout
+    val ready = (state as? GameUiState.Ready)?.rom
+    // Tabs live here so L1/R1 can flip them from anywhere on the page, as on the web.
+    var tab by rememberSaveable(romId) { mutableIntStateOf(0) }
+    val tabs = remember(ready?.screenshots, ready?.files) { ready?.let { detailTabs(it) } ?: listOf(DetailTab.OVERVIEW) }
+    val tabIndex = tab.coerceIn(0, tabs.lastIndex)
 
-    Column(Modifier.fillMaxSize()) {
-        val title = (state as? GameUiState.Ready)?.rom?.name ?: ""
-        RommTopBar(title = title, subtitle = (state as? GameUiState.Ready)?.rom?.platformName, onBack = onBack)
-        Box(Modifier.weight(1f)) {
-            when (val s = state) {
-                GameUiState.Loading -> DetailSkeleton()
-                is GameUiState.Error -> ErrorState(s.error.userMessage(context), onRetry = { vm.load() })
-                is GameUiState.Ready -> DetailBody(
-                    rom = s.rom,
-                    present = present,
-                    progress = progress,
-                    horizontal = layout.isShort || layout.widthDp >= 600,
-                    onDownload = { vm.download() },
-                    onDownloadAgain = { vm.download(force = true) },
-                    onUninstall = { confirmUninstall = s.rom },
-                    onOpenGame = onOpenGame,
-                )
+    // v2: the game page sits on its own cover, blurred and faded into the background.
+    SetBackdrop(ready?.let { it.coverSmall ?: it.coverLarge })
+    val dual = LocalDualScreen.current
+    LaunchedEffect(ready) { dual?.show(ready) }
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            RommTopBar(title = ready?.platformName ?: "", onBack = onBack)
+            Box(Modifier.weight(1f)) {
+                when (val s = state) {
+                    GameUiState.Loading -> DetailSkeleton()
+                    is GameUiState.Error -> ErrorState(s.error.userMessage(context), onRetry = { vm.load() })
+                    is GameUiState.Ready -> DetailBody(
+                        rom = s.rom,
+                        present = present,
+                        progress = progress,
+                        horizontal = layout.isShort || layout.widthDp >= 600,
+                        platformIcons = remember(s.rom.platformSlug) { vm.platformIconUrls(s.rom.platformSlug) },
+                        tabs = tabs,
+                        tab = tabIndex,
+                        onTab = { tab = it },
+                        onDownload = { vm.download() },
+                        onDownloadAgain = { vm.download(force = true) },
+                        onUninstall = { confirmUninstall = s.rom },
+                        onOpenGame = onOpenGame,
+                        onDownloadFile = { f, label -> vm.viewModelScope.launch { vm.enqueue.enqueueFile(s.rom, f, label) } },
+                    )
+                }
+            }
+            DownloadMiniBar(onClick = onOpenDownloads, modifier = Modifier.padding(bottom = LocalNavBarInset.current))
+            // Hint bar: X downloads, LB/RB flip the tabs. The action button under the title holds the focus and says what
+            // A does. R3 still has to be handled, because MainScaffold is not resumed behind this
+            // destination; L1/R1 step through the tabs, silently, like every letter index.
+            PadBar(tabs.size, ready?.id, present) {
+                silent(GamepadAction.OPEN_DOWNLOADS) { onOpenDownloads() }
+                // X downloads from anywhere on the page, no need to walk the cursor to the button.
+                // Already on the device, it asks before downloading again (the usual dialog).
+                // Both shown where they act (X inside the download button, LB / RB around the
+                // tabs), so they stay out of the hint bar.
+                if (ready != null) {
+                    silent(GamepadAction.DOWNLOAD) { vm.download(force = false) }
+                }
+                if (tabs.size > 1) {
+                    silent(GamepadAction.PREV_LETTER) { tab = (tabIndex - 1).coerceAtLeast(0) }
+                    silent(GamepadAction.NEXT_LETTER) { tab = (tabIndex + 1).coerceAtMost(tabs.lastIndex) }
+                }
             }
         }
-        DownloadMiniBar(onClick = onOpenDownloads)
-        // No shortcut bar here. The action button under the cover holds the focus and says what A
-        // does, and a second "X Download" next to it was the duplicate the owner keeps removing.
-        // R3 still has to be handled, because MainScaffold is not resumed behind this destination.
-        PadBar { silent(GamepadAction.OPEN_DOWNLOADS) { onOpenDownloads() } }
+        // The text scrolls on under the system bar: a fade there, so it dims away instead of
+        // being cut by the bar's edge.
+        Box(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(LocalNavBarInset.current + 64.dp)
+                .background(com.rommmobile.app.core.design.softFadeBrush(RommTheme.colors.background, RommTheme.colors.isDark)),
+        )
     }
 
     pending?.let { p ->
@@ -219,63 +324,227 @@ fun UninstallDialog(rom: Rom, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     }
 }
 
+enum class DetailTab(val labelRes: Int) { OVERVIEW(R.string.tab_overview), MEDIA(R.string.tab_media), FILES(R.string.tab_files) }
+
+/** Overview always; Media and Files only when there is something to put in them. */
+fun detailTabs(rom: Rom): List<DetailTab> = buildList {
+    add(DetailTab.OVERVIEW)
+    if (rom.screenshots.isNotEmpty()) add(DetailTab.MEDIA)
+    if (rom.files.size > 1 || rom.extraFiles.isNotEmpty()) add(DetailTab.FILES)
+}
+
+/**
+ * The v2 game page (`v2/views/GameDetails.vue`): cover column on the left with a deep shadow, then
+ * a heavy title, a meta line, tags, the actions and underlined tabs. On a portrait phone the cover
+ * is centred on top instead.
+ */
 @Composable
 private fun DetailBody(
     rom: Rom,
     present: Boolean,
     progress: DownloadProgress?,
     horizontal: Boolean,
+    platformIcons: List<String>,
+    tabs: List<DetailTab>,
+    tab: Int,
+    onTab: (Int) -> Unit,
     onDownload: () -> Unit,
     onDownloadAgain: () -> Unit,
     onUninstall: () -> Unit,
     onOpenGame: (Int) -> Unit,
+    onDownloadFile: (RomFile, String) -> Unit,
 ) {
     val layout = RommTheme.layout
     val scroll = rememberScrollState()
-    val cover: @Composable () -> Unit = {
-        Box(Modifier.widthIn(max = 260.dp).fillMaxWidth().aspectRatio(1f / 1.4f)) {
-            CoverImage(rom.coverLarge ?: rom.coverSmall, rom.name, Modifier.fillMaxSize())
-            rom.regionBadge?.let { Badge(it, Modifier.align(Alignment.TopStart).padding(6.dp)) }
+    var viewer by remember { mutableStateOf<Int?>(null) }
+    val covers = remember(rom.id, rom.coverLarge, rom.coverSmall) { rom.coverCandidates(preferLarge = true) }
+    var ratio by remember(rom.id) { mutableFloatStateOf(CoverRatios.firstKnown(covers) ?: COVER_RATIO) }
+    val cover: @Composable (Modifier) -> Unit = { m ->
+        // The picture's own shape (a GBA box is nearly square), capped so a strip of art cannot
+        // push the page around.
+        // Entrance: the box swings in from a 3D tilt and settles, like a case pulled off a shelf.
+        val enter = remember(rom.id) { androidx.compose.animation.core.Animatable(0f) }
+        LaunchedEffect(rom.id) {
+            enter.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.62f, stiffness = 140f))
+        }
+        Box(
+            m.aspectRatio(ratio.coerceIn(0.5f, 1.5f))
+                .graphicsLayer {
+                    val v = enter.value
+                    rotationY = (1f - v) * -38f
+                    rotationX = (1f - v) * 8f
+                    cameraDistance = 14f * density
+                    alpha = v.coerceIn(0f, 1f)
+                    val s = 0.92f + 0.08f * v
+                    scaleX = s; scaleY = s
+                }
+                .shadow(22.dp, ArtShapeLarge, ambientColor = Color.Black, spotColor = Color.Black),
+        ) {
+            CoverImage(covers, rom.name, Modifier.fillMaxSize(), shape = ArtShapeLarge, onRatio = { ratio = it })
         }
     }
-    val info: @Composable () -> Unit = {
-        InfoColumn(rom, present, progress, onDownload, onDownloadAgain, onUninstall, onOpenGame)
+    val body: @Composable ColumnScope.() -> Unit = {
+        DetailHeader(rom, platformIcons)
+        Spacer(Modifier.height(14.dp))
+        ActionRow(rom, present, progress, onDownload, onDownloadAgain, onUninstall)
+        Spacer(Modifier.height(18.dp))
+        if (tabs.size > 1) {
+            DetailTabs(tabs, tab, onTab)
+            Spacer(Modifier.height(14.dp))
+        }
+        when (tabs.getOrNull(tab) ?: DetailTab.OVERVIEW) {
+            DetailTab.OVERVIEW -> OverviewTab(rom, onOpenGame)
+            DetailTab.MEDIA -> MediaTab(rom.screenshots, onOpen = { viewer = it })
+            DetailTab.FILES -> FilesTab(rom, onDownloadFile)
+        }
+        Spacer(Modifier.height(28.dp))
     }
     if (horizontal) {
-        Row(Modifier.fillMaxSize().padding(layout.padding)) {
-            Column(Modifier.width(if (layout.isShort) 150.dp else 220.dp).fillMaxHeight()) { cover() }
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(scroll).rightStickScroll(scroll)) { info() }
+        Row(Modifier.fillMaxSize().padding(horizontal = layout.margin, vertical = layout.padding)) {
+            Column(Modifier.width(if (layout.isShort) 150.dp else 220.dp).padding(top = 6.dp)) { cover(Modifier.fillMaxWidth()) }
+            Spacer(Modifier.width(if (layout.isShort) 20.dp else 32.dp))
+            Column(Modifier.weight(1f).fillMaxHeight().dpadScroll(scroll).verticalScroll(scroll).rightStickScroll(scroll).padding(top = 4.dp, bottom = LocalNavBarInset.current + 24.dp), content = body)
         }
     } else {
-        Column(Modifier.fillMaxSize().verticalScroll(scroll).rightStickScroll(scroll).padding(layout.padding), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.width(200.dp)) { cover() }
-            Spacer(Modifier.height(12.dp))
-            info()
+        Column(Modifier.fillMaxSize().dpadScroll(scroll).verticalScroll(scroll).rightStickScroll(scroll).padding(layout.padding).padding(bottom = LocalNavBarInset.current + 24.dp)) {
+            Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
+                cover(Modifier.fillMaxWidth(0.5f).widthIn(min = 160.dp, max = 260.dp))
+            }
+            Spacer(Modifier.height(20.dp))
+            body()
+        }
+    }
+    viewer?.let { start -> ScreenshotViewer(rom.screenshots, start, onDismiss = { viewer = null }) }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DetailHeader(rom: Rom, platformIcons: List<String>) {
+    val colors = RommTheme.colors
+    Text(
+        rom.name,
+        style = MaterialTheme.typography.headlineMedium.copy(shadow = Shadow(Color(0x80000000), Offset(0f, 2f), 20f)),
+        color = colors.onBackground,
+    )
+    Spacer(Modifier.height(8.dp))
+    // Meta line: platform, year, size, rating, dots at 30% between them. With the second screen
+    // showing this game, platform, year and rating are already there in pills: only the size
+    // (which only this screen has) stays.
+    val dual = LocalDualScreen.current
+    val companionOn by (dual?.activeState ?: remember { kotlinx.coroutines.flow.MutableStateFlow(false) }).collectAsStateWithLifecycle()
+    val dot = colors.onSurfaceSecondary.copy(alpha = 0.3f)
+    val parts = buildList {
+        if (!companionOn) add(rom.platformName)
+        if (!companionOn) Format.year(rom.firstReleaseDate)?.let { add(it) }
+        if (rom.sizeBytes > 0) add(Format.bytes(rom.sizeBytes))
+    }
+    val rating = if (companionOn) null else rom.rating?.takeIf { it > 0 }?.let { "%.1f".format(if (it > 10) it / 10.0 else it) }
+    if (parts.isNotEmpty() || rating != null) Row(verticalAlignment = Alignment.CenterVertically) {
+        if (!companionOn) {
+            PlatformIcon(platformIcons, size = 16.dp)
+            Spacer(Modifier.width(6.dp))
+        }
+        Text(
+            buildAnnotatedString {
+                parts.forEachIndexed { i, p ->
+                    if (i > 0) withStyle(SpanStyle(color = dot)) { append("  \u00B7  ") }
+                    append(p)
+                }
+                if (rating != null) {
+                    withStyle(SpanStyle(color = dot)) { append("  \u00B7  ") }
+                    withStyle(SpanStyle(color = colors.gold)) { append("\u2605 $rating") }
+                }
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.onSurfaceSecondary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+    // Tags: regions in the info tone, languages in the brand tone, flags first.
+    val regions = rom.regions.filter { it.isNotBlank() }
+    val languages = rom.languages.filter { it.isNotBlank() }
+    if (regions.isNotEmpty() || languages.isNotEmpty() || rom.hasMultipleFiles || rom.missingFromFs || rom.extraFiles.isNotEmpty()) {
+        Spacer(Modifier.height(10.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            regions.forEach { r -> Tag(listOfNotNull(Flags.of(r), r).joinToString(" "), tone = colors.info) }
+            languages.forEach { l -> Tag(listOfNotNull(Flags.of(l), l).joinToString(" "), tone = colors.primaryLighten) }
+            if (rom.hasMultipleFiles) Tag(stringResource(R.string.detail_files, rom.files.size), tone = colors.accent)
+            rom.extraFiles.groupBy { it.category }.forEach { (cat, list) ->
+                Tag((if (list.size > 1) "${list.size} \u00D7 " else "") + categoryLabel(cat), tone = if (cat == "update") colors.info else colors.accent)
+            }
+            if (rom.missingFromFs) Tag(stringResource(R.string.detail_missing), tone = colors.danger)
         }
     }
 }
 
 @Composable
-private fun InfoColumn(
+private fun Tag(text: String, tone: Color? = null) {
+    val colors = RommTheme.colors
+    val shape = RoundedCornerShape(6.dp)
+    Text(
+        text,
+        style = MaterialTheme.typography.labelMedium,
+        color = tone?.copy(alpha = 0.9f) ?: colors.onSurfaceSecondary,
+        maxLines = 1,
+        modifier = Modifier
+            .background(tone?.copy(alpha = 0.12f) ?: colors.surface, shape)
+            .border(1.dp, tone?.copy(alpha = 0.4f) ?: colors.borderStrong, shape)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    )
+}
+
+/** v2 pill button: label and icon, 1 dp edge, focus ring from the app's own rule. */
+@Composable
+private fun PillButton(
+    text: String,
+    icon: ImageVector?,
+    onClick: () -> Unit,
+    container: Color,
+    content: Color,
+    modifier: Modifier = Modifier,
+    border: Color? = null,
+    /** Pad button that triggers this from anywhere on the page, drawn inside the button. */
+    padButton: PadButton? = null,
+) {
+    val hasPad by rememberHasGamepad()
+    Button(
+        onClick = onClick,
+        shape = PillShape,
+        colors = ButtonDefaults.buttonColors(containerColor = container, contentColor = content),
+        border = border?.let { BorderStroke(1.dp, it) },
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+        modifier = modifier.gamepadFocusRing(PillShape),
+    ) {
+        if (icon != null) {
+            Icon(icon, null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(7.dp))
+        }
+        Text(text, style = MaterialTheme.typography.labelLarge)
+        if (padButton != null && hasPad) {
+            Spacer(Modifier.width(10.dp))
+            FaceButtonsGlyph(padButton, size = 18.dp, tint = content)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ActionRow(
     rom: Rom,
     present: Boolean,
     progress: DownloadProgress?,
     onDownload: () -> Unit,
     onDownloadAgain: () -> Unit,
     onUninstall: () -> Unit,
-    onOpenGame: (Int) -> Unit,
 ) {
     val colors = RommTheme.colors
     val downloadFr = remember { FocusRequester() }
-    // requestFocus() does not report failure, it just quietly does nothing while the screen is
-    // still laying out - which is why the action button used to sit there looking exactly like a
-    // button nobody had selected. Retry until the button itself says it has focus.
-    var actionFocused by remember { mutableStateOf(false) }
     // requestFocus() reports nothing when it fails, and in touch mode it is a no-op by design, so
     // keep asking for a few frames and stop as soon as the button itself says it has focus. Landing
     // here with the pad puts the action under the cursor; landing here with a finger does not, and
     // should not.
+    var actionFocused by remember { mutableStateOf(false) }
     LaunchedEffect(rom.id) {
         repeat(10) {
             if (actionFocused) return@LaunchedEffect
@@ -283,24 +552,11 @@ private fun InfoColumn(
             kotlinx.coroutines.delay(60)
         }
     }
-
-    Text(rom.name, style = MaterialTheme.typography.headlineSmall)
-    Spacer(Modifier.height(4.dp))
-    val meta = buildList {
-        add(rom.platformName)
-        Format.year(rom.firstReleaseDate)?.let { add(it) }
-        rom.rating?.takeIf { it > 0 }?.let { add("★ ${"%.1f".format(if (it > 10) it / 10.0 else it)}") }
-        if (rom.sizeBytes > 0) add(Format.bytes(rom.sizeBytes))
-    }
-    Text(meta.joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceMuted)
-    if (rom.genres.isNotEmpty() || rom.companies.isNotEmpty()) {
-        Spacer(Modifier.height(2.dp))
-        Text((rom.genres + rom.companies).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
-    }
-    Spacer(Modifier.height(12.dp))
-
-    // ---- action row ----
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    // The web's "Play" pill is white on dark; on the light theme white on white would vanish.
+    val emphasis = if (colors.isDark) colors.emphasis else colors.primary
+    val onEmphasis = if (colors.isDark) colors.onEmphasis else Color.White
+    val primaryMod = Modifier.focusRequester(downloadFr).onFocusChanged { actionFocused = it.isFocused }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         when {
             progress != null && !progress.state.isTerminal -> {
                 val label = when (progress.state) {
@@ -312,91 +568,300 @@ private fun InfoColumn(
                     DownloadState.MOVING -> stringResource(R.string.state_moving)
                     else -> progress.state.name
                 }
-                StatusPill(label, colors.blue)
+                Row(
+                    Modifier.background(colors.blue.copy(alpha = 0.16f), PillShape).border(1.dp, colors.blue.copy(alpha = 0.5f), PillShape)
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (progress.state == DownloadState.DOWNLOADING) {
+                        CircularProgressIndicator(progress = { progress.percent / 100f }, modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = colors.info, trackColor = colors.border)
+                    } else {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = colors.info)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(label, style = MaterialTheme.typography.labelLarge, color = colors.info)
+                }
             }
             present -> {
-                StatusPill(stringResource(R.string.state_present), colors.green)
                 // The game is already here, so the useful action is getting rid of it. Downloading
-                // it a second time stays reachable but reads as secondary, because it almost never
-                // is what the user came for.
-                Button(
-                    onClick = onUninstall,
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.red, contentColor = Color.White),
-                    modifier = Modifier.focusRequester(downloadFr).onFocusChanged { actionFocused = it.isFocused }.gamepadFocusRing(PillShape),
-                ) {
-                    Icon(Icons.Rounded.DeleteOutline, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.action_uninstall))
-                }
-                TextButton(onClick = onDownloadAgain, modifier = Modifier.gamepadFocusRing(PillShape)) {
-                    Text(stringResource(R.string.action_download_again))
-                }
+                // it a second time stays reachable but reads as secondary.
+                PillButton(
+                    stringResource(R.string.action_uninstall), Icons.Rounded.DeleteOutline, onUninstall,
+                    container = colors.red, content = Color.White, modifier = primaryMod,
+                )
+                PillButton(
+                    stringResource(R.string.action_download_again), Icons.Rounded.Refresh, onDownloadAgain,
+                    container = colors.surface, content = colors.onSurface, border = colors.borderStrong,
+                    padButton = PadButton.X,
+                )
+                // No "On device" pill: an Uninstall button already says the game is here.
             }
-            else -> Button(onClick = onDownload, modifier = Modifier.focusRequester(downloadFr).onFocusChanged { actionFocused = it.isFocused }.gamepadFocusRing(PillShape)) {
-                Icon(Icons.Rounded.Download, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(stringResource(R.string.action_download))
-            }
+            else -> PillButton(
+                stringResource(R.string.action_download), Icons.Rounded.Download, onDownload,
+                container = emphasis, content = onEmphasis, modifier = primaryMod,
+                padButton = PadButton.X,
+            )
         }
     }
-    Spacer(Modifier.height(6.dp))
-    Text(rom.fsName, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceMuted)
-    if (rom.hasMultipleFiles) {
-        Text(stringResource(R.string.detail_multi_file, rom.files.size), style = MaterialTheme.typography.bodySmall, color = colors.accent)
-    }
+}
 
+/** Underlined tabs: 1 dp baseline, 2 dp brand indicator under the selected one. */
+@Composable
+private fun DetailTabs(tabs: List<DetailTab>, selected: Int, onSelect: (Int) -> Unit) {
+    val colors = RommTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .drawBehind { drawLine(colors.borderStrong, Offset(0f, size.height - 0.5f), Offset(size.width, size.height - 0.5f), 1f) }
+            .focusGroup(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // LB / RB flip the tabs: shown right where they act, framing the row, pad only.
+        val hasPad by rememberHasGamepad()
+        if (hasPad) {
+            KeycapGlyph("LB", Modifier.padding(end = 6.dp))
+        }
+        tabs.forEachIndexed { i, t ->
+            val sel = i == selected
+            val shape = RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp)
+            Box(
+                Modifier
+                    .gamepadFocus(shape, scale = 1f, onFocused = { if (it) onSelect(i) })
+                    .clip(shape)
+                    .clickable { onSelect(i) }
+                    .drawBehind {
+                        if (sel) {
+                            val h = 2.dp.toPx()
+                            drawRect(colors.primary, topLeft = Offset(0f, size.height - h), size = Size(size.width, h))
+                        }
+                    }
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
+            ) {
+                Text(
+                    stringResource(t.labelRes),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Medium,
+                    color = if (sel) colors.onSurface else colors.onSurfaceMuted,
+                )
+            }
+        }
+        if (hasPad) {
+            KeycapGlyph("RB", Modifier.padding(start = 6.dp))
+        }
+    }
+}
+
+@Composable
+private fun OverviewTab(rom: Rom, onOpenGame: (Int) -> Unit) {
+    val colors = RommTheme.colors
     if (!rom.summary.isNullOrBlank()) {
-        Spacer(Modifier.height(12.dp))
-        Text(rom.summary, style = MaterialTheme.typography.bodyMedium)
+        Text(rom.summary, style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp), color = colors.onSurfaceSecondary)
+    } else {
+        Text(stringResource(R.string.detail_no_summary), style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceFaint)
+    }
+    Spacer(Modifier.height(16.dp))
+    val rows = buildList {
+        Format.year(rom.firstReleaseDate)?.let { add(R.string.detail_release to it) }
+        if (rom.genres.isNotEmpty()) add(R.string.detail_genres to rom.genres.joinToString(", "))
+        if (rom.companies.isNotEmpty()) add(R.string.detail_companies to rom.companies.joinToString(", "))
+        add(R.string.detail_file to rom.fsName)
+    }
+    val shape = MaterialTheme.shapes.large
+    Column(
+        Modifier.fillMaxWidth().clip(shape).background(colors.elevated).border(1.dp, colors.border, shape).padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        rows.forEach { (label, value) ->
+            Row {
+                Text(stringResource(label), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceMuted, modifier = Modifier.width(110.dp))
+                Text(value, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceSecondary, modifier = Modifier.weight(1f))
+            }
+        }
+        if (rom.hasMultipleFiles) {
+            Text(stringResource(R.string.detail_multi_file, rom.files.size), style = MaterialTheme.typography.bodySmall, color = colors.accent)
+        }
     }
 
     if (rom.siblings.isNotEmpty()) {
-        Spacer(Modifier.height(12.dp))
-        SectionHeader(stringResource(R.string.detail_versions, rom.siblings.size + 1), Modifier.padding(0.dp))
-        rom.siblings.forEach { s ->
+        Spacer(Modifier.height(18.dp))
+        Text(stringResource(R.string.detail_versions, rom.siblings.size + 1), style = MaterialTheme.typography.titleSmall, color = colors.onSurface)
+        Spacer(Modifier.height(6.dp))
+        rom.siblings.forEach { sib ->
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .gamepadFocusRing(MaterialTheme.shapes.small)
-                    .clip(MaterialTheme.shapes.small)
-                    .clickable { onOpenGame(s.id) }
-                    .padding(vertical = 8.dp, horizontal = 6.dp),
+                    .padding(vertical = 2.dp)
+                    .gamepadFocusRing(MaterialTheme.shapes.medium)
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(colors.surface)
+                    .border(1.dp, colors.border, MaterialTheme.shapes.medium)
+                    .clickable { onOpenGame(sib.id) }
+                    .padding(vertical = 9.dp, horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(s.fsNameNoTags ?: s.name ?: "#${s.id}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (s.isMain) Icon(Icons.Rounded.Check, null, tint = colors.primaryLighten, modifier = Modifier.size(16.dp))
+                Text(sib.fsNameNoTags ?: sib.name ?: "#${sib.id}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (sib.isMain) Icon(Icons.Rounded.Check, null, tint = colors.primaryLighten, modifier = Modifier.size(16.dp))
             }
         }
     }
+}
 
-    if (rom.files.size > 1) {
-        Spacer(Modifier.height(12.dp))
-        SectionHeader(stringResource(R.string.detail_files, rom.files.size), Modifier.padding(0.dp))
-        rom.files.take(40).forEach { f ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp, horizontal = 6.dp)) {
-                Text(f.fileName, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(Format.bytes(f.sizeBytes), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceMuted)
+@Composable
+private fun MediaTab(screenshots: List<String>, onOpen: (Int) -> Unit) {
+    val colors = RommTheme.colors
+    val layout = RommTheme.layout
+    if (screenshots.isEmpty()) {
+        Text(stringResource(R.string.detail_no_media), style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceFaint)
+        return
+    }
+    val state = rememberLazyListState()
+    val w = if (layout.isShort) 200.dp else 260.dp
+    LazyRow(
+        state = state,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(vertical = 6.dp, horizontal = 2.dp),
+        modifier = Modifier.fillMaxWidth().focusGroup(),
+    ) {
+        itemsIndexed(screenshots) { i, url ->
+            val shape = MaterialTheme.shapes.medium
+            Box(
+                Modifier
+                    .width(w)
+                    .aspectRatio(4f / 3f)
+                    .gamepadFocus(shape)
+                    .shadow(6.dp, shape)
+                    .clip(shape)
+                    .clickable { onOpen(i) },
+            ) {
+                CoverImage(listOf(url), stringResource(R.string.detail_screenshot, i + 1, screenshots.size), Modifier.fillMaxSize(), shape = shape, showTitleWhenMissing = false)
             }
         }
-        if (rom.files.size > 40) Text("…", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceMuted, modifier = Modifier.padding(horizontal = 6.dp))
     }
-    Spacer(Modifier.height(24.dp))
+}
+
+/** Label for a RomM file category (`dlc`, `update`, `mod`...), in the device language. */
+@Composable
+fun categoryLabel(category: String?): String = when (category?.lowercase()) {
+    null, "", "game" -> stringResource(R.string.cat_game)
+    "dlc" -> stringResource(R.string.cat_dlc)
+    "update" -> stringResource(R.string.cat_update)
+    "mod" -> stringResource(R.string.cat_mod)
+    "patch" -> stringResource(R.string.cat_patch)
+    "hack" -> stringResource(R.string.cat_hack)
+    "translation" -> stringResource(R.string.cat_translation)
+    "demo" -> stringResource(R.string.cat_demo)
+    "prototype" -> stringResource(R.string.cat_prototype)
+    "manual" -> stringResource(R.string.cat_manual)
+    "cheat" -> stringResource(R.string.cat_cheat)
+    else -> category.replaceFirstChar { it.uppercase() }
+}
+
+/**
+ * Every file RomM knows for the game, the game first, then its extras grouped by category. Each
+ * row downloads on its own: a DLC or an update can be fetched without the 30 GB game again, and
+ * lands in the game's folder under the category name, as RomM lays it out.
+ */
+@Composable
+private fun FilesTab(rom: Rom, onDownloadFile: (RomFile, String) -> Unit) {
+    val colors = RommTheme.colors
+    val shape = MaterialTheme.shapes.large
+    val ordered = remember(rom.files) {
+        rom.files.sortedWith(compareBy<RomFile>({ if (it.category == null || it.category == Rom.GAME) 0 else 1 }, { it.category ?: "" }, { it.fileName }))
+    }
+    Column(Modifier.fillMaxWidth().clip(shape).background(colors.elevated).border(1.dp, colors.border, shape).padding(vertical = 4.dp)) {
+        ordered.take(80).forEachIndexed { i, f ->
+            if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+            val label = categoryLabel(f.category)
+            val isGame = f.category == null || f.category == Rom.GAME
+            val tone = when (f.category?.lowercase()) {
+                "dlc" -> colors.accent
+                "update" -> colors.info
+                "mod", "hack", "patch", "translation" -> colors.primaryLighten
+                else -> null
+            }
+            Row(
+                Modifier.fillMaxWidth()
+                    .gamepadFocusRow(MaterialTheme.shapes.small)
+                    .clickable { onDownloadFile(f, label) }
+                    .padding(vertical = 8.dp, horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Tag(label, tone = tone)
+                Spacer(Modifier.width(10.dp))
+                Text(f.fileName, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceSecondary, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.width(8.dp))
+                Text(Format.bytes(f.sizeBytes), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceMuted)
+                Spacer(Modifier.width(10.dp))
+                Icon(
+                    Icons.Rounded.Download,
+                    contentDescription = stringResource(R.string.action_download_file, f.fileName),
+                    tint = if (isGame) colors.onSurfaceMuted else colors.primaryLighten,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+        if (ordered.size > 80) Text("\u2026", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceMuted, modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
+    }
+}
+
+/** Full-screen screenshot pager. D-pad left/right flips, B or a tap outside closes. */
+@Composable
+private fun ScreenshotViewer(urls: List<String>, start: Int, onDismiss: () -> Unit) {
+    ModalScope()
+    val pager = rememberPagerState(initialPage = start.coerceIn(0, urls.lastIndex)) { urls.size }
+    val scope = rememberCoroutineScope()
+    val fr = remember { FocusRequester() }
+    LaunchedEffect(Unit) { repeat(6) { runCatching { fr.requestFocus() }; kotlinx.coroutines.delay(40) } }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        DialogPadRemap(onBack = onDismiss)
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .focusRequester(fr)
+                .focusable()
+                .onPreviewKeyEvent { e ->
+                    if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when (e.key) {
+                        Key.DirectionLeft, Key.ButtonL1 -> { scope.launch { pager.animateScrollToPage((pager.currentPage - 1).coerceAtLeast(0)) }; true }
+                        Key.DirectionRight, Key.ButtonR1 -> { scope.launch { pager.animateScrollToPage((pager.currentPage + 1).coerceAtMost(urls.lastIndex)) }; true }
+                        else -> false
+                    }
+                },
+        ) {
+            HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
+                AsyncImage(
+                    model = urls[page],
+                    contentDescription = stringResource(R.string.detail_screenshot, page + 1, urls.size),
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize().clickable(onClick = onDismiss),
+                )
+            }
+            Text(
+                "${pager.currentPage + 1} / ${urls.size}",
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
+                    .background(Color(0x8C000000), PillShape).padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+        }
+    }
 }
 
 @Composable
 private fun DetailSkeleton() {
     val layout = RommTheme.layout
-    Row(Modifier.fillMaxSize().padding(layout.padding)) {
-        Skeleton(Modifier.width(150.dp).aspectRatio(1f / 1.4f))
-        Spacer(Modifier.width(16.dp))
+    Row(Modifier.fillMaxSize().padding(horizontal = layout.margin, vertical = layout.padding)) {
+        Skeleton(Modifier.width(150.dp).aspectRatio(COVER_RATIO), ArtShapeLarge)
+        Spacer(Modifier.width(20.dp))
         Column(Modifier.weight(1f)) {
-            Skeleton(Modifier.fillMaxWidth(0.7f).height(22.dp), MaterialTheme.shapes.small)
-            Spacer(Modifier.height(8.dp))
+            Skeleton(Modifier.fillMaxWidth(0.7f).height(28.dp), MaterialTheme.shapes.small)
+            Spacer(Modifier.height(10.dp))
             Skeleton(Modifier.fillMaxWidth(0.4f).height(14.dp), MaterialTheme.shapes.small)
-            Spacer(Modifier.height(16.dp))
-            Skeleton(Modifier.width(140.dp).height(36.dp), PillShape)
-            Spacer(Modifier.height(16.dp))
-            repeat(4) { Skeleton(Modifier.fillMaxWidth().height(12.dp).padding(bottom = 6.dp), MaterialTheme.shapes.small); Spacer(Modifier.height(6.dp)) }
+            Spacer(Modifier.height(18.dp))
+            Skeleton(Modifier.width(150.dp).height(40.dp), PillShape)
+            Spacer(Modifier.height(18.dp))
+            repeat(4) { Skeleton(Modifier.fillMaxWidth().height(12.dp), MaterialTheme.shapes.small); Spacer(Modifier.height(8.dp)) }
         }
     }
 }

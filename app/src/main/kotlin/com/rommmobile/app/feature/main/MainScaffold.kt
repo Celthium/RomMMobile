@@ -1,6 +1,23 @@
 package com.rommmobile.app.feature.main
 
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SdCard
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.SportsEsports
+import com.rommmobile.app.core.design.LocalNavBarInset
+import com.rommmobile.app.core.design.LocalBottomOverlay
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,11 +76,15 @@ import com.rommmobile.app.feature.platforms.LocalPlatformsScreen
 import com.rommmobile.app.feature.platforms.PlatformsScreen
 import com.rommmobile.app.feature.search.SearchScreen
 
+/**
+ * Icons follow the RomM v2 nav (`useNavDestinations`): mdi-controller, mdi-bookmark-outline,
+ * mdi-magnify. "Installed" has no web counterpart: an outlined SD card, same family.
+ */
 private enum class Section(val icon: ImageVector, val labelRes: Int) {
-    PLATFORMS(Icons.Rounded.SportsEsports, R.string.section_platforms),
-    COLLECTIONS(Icons.Rounded.Collections, R.string.section_collections),
-    LOCAL(Icons.Rounded.SdStorage, R.string.section_local),
-    SEARCH(Icons.Rounded.Search, R.string.section_search),
+    PLATFORMS(Icons.Outlined.SportsEsports, R.string.section_platforms),
+    COLLECTIONS(Icons.Outlined.BookmarkBorder, R.string.section_collections),
+    LOCAL(Icons.Outlined.SdCard, R.string.section_local),
+    SEARCH(Icons.Outlined.Search, R.string.section_search),
 }
 
 /**
@@ -113,16 +134,29 @@ fun MainScaffold(
     }
 
     if (layout.navMode == NavMode.BOTTOM_BAR) {
-        Column(Modifier.fillMaxSize()) {
-            content(Modifier.weight(1f).fillMaxWidth())
-            DownloadMiniBar(onClick = onOpenDownloads)
-            BottomBar(
-                selected = sectionIndex,
-                onSelect = { sectionIndex = it },
-                openCount = openCount,
-                onOpenDownloads = onOpenDownloads,
-                onOpenSettings = onOpenSettings,
-            )
+        // The pill floats over the content, as in the v2 web app: the grid scrolls on behind a
+        // dark gradient instead of stopping at a solid band.
+        Box(Modifier.fillMaxSize()) {
+            val navInset = LocalNavBarInset.current
+            CompositionLocalProvider(LocalBottomOverlay provides layout.bottomBarHeight + 40.dp + navInset) {
+                content(Modifier.fillMaxSize())
+            }
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(com.rommmobile.app.core.design.softFadeBrush(colors.background, colors.isDark))
+                    .padding(top = 40.dp, bottom = navInset),
+            ) {
+                DownloadMiniBar(onClick = onOpenDownloads)
+                BottomBar(
+                    selected = sectionIndex,
+                    onSelect = { sectionIndex = it },
+                    openCount = openCount,
+                    onOpenDownloads = onOpenDownloads,
+                    onOpenSettings = onOpenSettings,
+                )
+            }
         }
     } else {
         Row(Modifier.fillMaxSize()) {
@@ -134,14 +168,20 @@ fun MainScaffold(
                 onOpenDownloads = onOpenDownloads,
                 onOpenSettings = onOpenSettings,
             )
+            // No extra gap: the page margin (layout.margin) is the space after the side panel.
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 content(Modifier.weight(1f).fillMaxWidth())
-                DownloadMiniBar(onClick = onOpenDownloads)
+                DownloadMiniBar(onClick = onOpenDownloads, modifier = Modifier.padding(bottom = LocalNavBarInset.current))
             }
         }
     }
 }
 
+/**
+ * v2 navigation (`AppShell/AppNav.vue`, `BottomNav.vue`): one rounded "pill" of glass holding the
+ * sections, the active one lit as a white disc with a dark glyph. Here it stands upright on the
+ * left, where the D-pad thumb is, instead of lying in the top bar.
+ */
 @Composable
 private fun Rail(
     mode: NavMode,
@@ -153,47 +193,87 @@ private fun Rail(
 ) {
     val colors = RommTheme.colors
     val requesters = remember { List(Section.entries.size) { FocusRequester() } }
+    val statusInset = with(androidx.compose.ui.platform.LocalDensity.current) {
+        androidx.compose.foundation.layout.WindowInsets.statusBars.getTop(this).toDp()
+    }
+    // A full-height side panel against the left edge, a hairline only on its right, like a
+    // desktop sidebar: not a floating pill.
     Column(
         Modifier
             .fillMaxHeight()
             .width(mode.railWidth)
-            .background(colors.surface)
+            // The panel runs on up behind the transparent status bar (the root insets stop the
+            // content below it): background and right hairline are drawn that much higher.
+            // Runs up behind the status bar but fades out there: no hard edge across the clock,
+            // and no step where the panel would otherwise stop under the bar.
+            .drawBehind {
+                val up = statusInset.toPx()
+                drawRect(colors.elevated, topLeft = Offset(0f, 160.dp.toPx()), size = androidx.compose.ui.geometry.Size(size.width, (size.height - 160.dp.toPx()).coerceAtLeast(0f)))
+                // Softer and longer fade: from nothing at the top of the screen to the full panel
+                // well below the status bar, so the panel melts into the header.
+                val fadeEnd = 160.dp.toPx()
+                drawRect(
+                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                        0f to colors.elevated.copy(alpha = 0f), 1f to colors.elevated, startY = -up, endY = fadeEnd,
+                    ),
+                    topLeft = Offset(0f, -up),
+                    size = androidx.compose.ui.geometry.Size(size.width, up + fadeEnd),
+                )
+                val x = size.width - 0.5f
+                drawLine(colors.borderStrong, Offset(x, 160.dp.toPx()), Offset(x, size.height), 1f)
+                drawLine(
+                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                        0f to colors.borderStrong.copy(alpha = 0f), 1f to colors.borderStrong, startY = -up, endY = 160.dp.toPx(),
+                    ),
+                    Offset(x, -up), Offset(x, 160.dp.toPx()), 1f,
+                )
+            }
+            // First icon level with the page title, Settings near the bottom edge: the gesture
+            // handle is centred, nothing to keep clear of on the left.
+            .padding(top = 0.dp, bottom = 10.dp)
             // Moving into the rail lands on the section that is already highlighted, never on the
             // first item: a cursor on "Platforms" while "Installed" is lit is two answers to one
             // question.
             .focusProperties { onEnter = { requesters[selected].requestFocus() } }
-            .focusGroup()
-            .padding(vertical = 8.dp),
+            .focusGroup(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Section.entries.forEachIndexed { i, s ->
+        // One full-height block: the sections and Downloads at the top, Settings alone at the
+        // bottom, apart from the things the user browses.
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Section.entries.forEachIndexed { i, s ->
+                RailItem(
+                    icon = s.icon,
+                    label = stringResource(s.labelRes),
+                    selected = selected == i,
+                    showLabel = mode.showLabels,
+                    onClick = { onSelect(i) },
+                    modifier = Modifier.focusRequester(requesters[i]),
+                )
+            }
             RailItem(
-                icon = s.icon,
-                label = stringResource(s.labelRes),
-                selected = selected == i,
+                icon = Icons.Outlined.FileDownload,
+                label = stringResource(R.string.section_downloads),
+                selected = false,
                 showLabel = mode.showLabels,
-                onClick = { onSelect(i) },
-                modifier = Modifier.focusRequester(requesters[i]),
+                badge = openCount.takeIf { it > 0 }?.toString(),
+                onClick = onOpenDownloads,
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.weight(1f))
+            RailItem(
+                icon = Icons.Outlined.Settings,
+                label = stringResource(R.string.section_settings),
+                selected = false,
+                showLabel = mode.showLabels,
+                onClick = onOpenSettings,
+            )
         }
-        Spacer(Modifier.weight(1f))
-        RailItem(
-            icon = Icons.Rounded.Download,
-            label = stringResource(R.string.section_downloads),
-            selected = false,
-            showLabel = mode.showLabels,
-            badge = openCount.takeIf { it > 0 }?.toString(),
-            onClick = onOpenDownloads,
-        )
-        Spacer(Modifier.height(4.dp))
-        RailItem(
-            icon = Icons.Rounded.Settings,
-            label = stringResource(R.string.section_settings),
-            selected = false,
-            showLabel = mode.showLabels,
-            onClick = onOpenSettings,
-        )
     }
 }
 
@@ -208,31 +288,40 @@ private fun RailItem(
     modifier: Modifier = Modifier,
 ) {
     val colors = RommTheme.colors
-    val shape = MaterialTheme.shapes.large
+    val shape = RoundedCornerShape(22.dp)
+    var focused by remember { mutableStateOf(false) }
+    // Compact stack (about 44 dp per entry) so the sections read as one group; focus is a
+    // colour, not a size, like everywhere else.
     Column(
         modifier
             .fillMaxWidth()
-            .padding(horizontal = 6.dp)
-            // Scale alone says where the cursor is, so it is a touch stronger than on a cover; a
-            // label sliding in underneath only made the item jump in height on every pass.
-            .gamepadFocus(shape, scale = 1.12f)
+            .padding(horizontal = 4.dp, vertical = 1.dp)
+            .gamepadFocus(shape, scale = 1f, onFocused = { focused = it })
             .clip(shape)
-            .background(if (selected) colors.primary.copy(alpha = 0.22f) else colors.surface)
-            .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
+            // No default indication: its focus overlay drew a second, rounded-rect highlight
+            // around the whole entry on top of the icon's own circle.
+            .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = onClick)
+            .padding(vertical = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box {
-            Icon(icon, contentDescription = label, tint = if (selected) colors.primaryLighten else colors.onSurface, modifier = Modifier.size(24.dp))
+            Box(
+                Modifier
+                    .size(38.dp)
+                    .background(if (selected) colors.emphasis else if (focused) colors.surfaceHover else Color.Transparent, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, contentDescription = label, tint = if (selected) colors.onEmphasis else colors.onSurfaceSecondary, modifier = Modifier.size(22.dp))
+            }
             if (badge != null) {
-                StatusPill(badge, colors.primary, modifier = Modifier.align(Alignment.TopEnd).padding(start = 14.dp))
+                StatusPill(badge, colors.primary, modifier = Modifier.align(Alignment.TopEnd))
             }
         }
         if (showLabel) {
             Text(
                 label,
                 style = MaterialTheme.typography.labelSmall,
-                color = if (selected) colors.primaryLighten else colors.onSurfaceMuted,
+                color = if (selected) colors.onSurface else colors.onSurfaceMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 2.dp),
@@ -241,6 +330,7 @@ private fun RailItem(
     }
 }
 
+/** Phones: the floating, icon-only bottom pill of the v2 web app (max 480 dp wide). */
 @Composable
 private fun BottomBar(
     selected: Int,
@@ -251,46 +341,52 @@ private fun BottomBar(
 ) {
     val colors = RommTheme.colors
     val layout = RommTheme.layout
-    Row(
+    val pill = RoundedCornerShape(999.dp)
+    Box(
         Modifier
             .fillMaxWidth()
-            .background(colors.surface)
             .height(layout.bottomBarHeight)
-            .focusGroup()
-            .padding(horizontal = 4.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Section.entries.forEachIndexed { i, s ->
-            BottomItem(s.icon, stringResource(s.labelRes), selected == i, Modifier.weight(1f)) { onSelect(i) }
+        Row(
+            Modifier
+                .widthIn(max = 480.dp)
+                .fillMaxWidth()
+                .fillMaxHeight()
+                .clip(pill)
+                .background(colors.surface.copy(alpha = 0.9f))
+                .border(1.dp, colors.borderStrong, pill)
+                .focusGroup()
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Section.entries.forEachIndexed { i, s ->
+                BottomItem(s.icon, stringResource(s.labelRes), selected == i, Modifier.weight(1f)) { onSelect(i) }
+            }
+            BottomItem(Icons.Outlined.FileDownload, stringResource(R.string.section_downloads), false, Modifier.weight(1f), badge = openCount.takeIf { it > 0 }?.toString(), onClick = onOpenDownloads)
+            BottomItem(Icons.Outlined.Settings, stringResource(R.string.section_settings), false, Modifier.weight(1f), onClick = onOpenSettings)
         }
-        BottomItem(Icons.Rounded.Download, stringResource(R.string.section_downloads), false, Modifier.weight(1f), badge = openCount.takeIf { it > 0 }?.toString(), onClick = onOpenDownloads)
-        BottomItem(Icons.Rounded.Settings, stringResource(R.string.section_settings), false, Modifier.weight(1f), onClick = onOpenSettings)
     }
 }
 
 @Composable
 private fun BottomItem(icon: ImageVector, label: String, selected: Boolean, modifier: Modifier, badge: String? = null, onClick: () -> Unit) {
     val colors = RommTheme.colors
-    val shape = MaterialTheme.shapes.large
-    Column(
+    var focused by remember { mutableStateOf(false) }
+    val pill = RoundedCornerShape(999.dp)
+    Box(
         modifier
-            .padding(horizontal = 2.dp, vertical = 6.dp)
-            .gamepadFocus(shape, scale = 1.12f)
-            .clip(shape)
-            .clickable(onClick = onClick)
-            .padding(vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .fillMaxHeight()
+            .padding(horizontal = 2.dp)
+            .gamepadFocus(pill, scale = 1f, onFocused = { focused = it })
+            .clip(pill)
+            .background(if (selected) colors.emphasis else if (focused) colors.surfaceHover else Color.Transparent)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            Modifier
-                .clip(CircleShape)
-                .background(if (selected) colors.primary.copy(alpha = 0.22f) else colors.surface)
-                .padding(horizontal = 14.dp, vertical = 3.dp)
-        ) {
-            Icon(icon, contentDescription = label, tint = if (selected) colors.primaryLighten else colors.onSurface, modifier = Modifier.size(24.dp))
-            if (badge != null) StatusPill(badge, colors.primary, modifier = Modifier.align(Alignment.TopEnd))
-        }
-        Text(label, style = MaterialTheme.typography.labelSmall, color = if (selected) colors.primaryLighten else colors.onSurfaceMuted, maxLines = 1)
+        Icon(icon, contentDescription = label, tint = if (selected) colors.onEmphasis else colors.onSurfaceSecondary, modifier = Modifier.size(22.dp))
+        if (badge != null) StatusPill(badge, colors.primary, modifier = Modifier.align(Alignment.TopEnd).padding(top = 2.dp, end = 6.dp))
     }
 }

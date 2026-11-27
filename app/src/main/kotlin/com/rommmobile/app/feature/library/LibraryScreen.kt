@@ -1,5 +1,9 @@
 package com.rommmobile.app.feature.library
 
+import com.rommmobile.app.core.design.cascadeIn
+import com.rommmobile.app.core.design.LocalNavBarInset
+import com.rommmobile.app.core.design.LocalBottomOverlay
+import com.rommmobile.app.core.design.bottomOverlayPadding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Box
@@ -43,6 +47,7 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -92,6 +97,12 @@ import com.rommmobile.app.core.design.PadBar
 import com.rommmobile.app.core.design.RommDialog
 import com.rommmobile.app.core.design.RommTheme
 import com.rommmobile.app.core.design.RommTopBar
+import com.rommmobile.app.core.design.SetBackdrop
+import com.rommmobile.app.feature.dualscreen.LocalDualScreen
+import com.rommmobile.app.core.design.RommSearchField
+import com.rommmobile.app.core.design.PillShape
+import com.rommmobile.app.core.design.CoverRatios
+import androidx.compose.runtime.mutableFloatStateOf
 import com.rommmobile.app.core.design.SettingRow
 import com.rommmobile.app.core.design.gamepadFocusRing
 import com.rommmobile.app.core.design.gamepadFocusIcon
@@ -147,8 +158,11 @@ fun LibraryScreen(
     // number shown there is the one on the shelf card, what is actually on this device.
     val presence by vm.presence.collectAsStateWithLifecycle()
     val shownTotal = if (onlyPresent && source is LibrarySource.ByPlatform) presence[source.platformSlug]?.size else meta.total
-    val subtitle = shownTotal?.let { stringResource(R.string.n_games, it) }
+    val subtitle = shownTotal?.let { pluralStringResource(R.plurals.games_count, it, it) }
+    // v2 page backdrop: the cover under the cursor, blurred behind the whole screen.
+    var backdrop by remember { mutableStateOf<String?>(null) }
 
+    SetBackdrop(backdrop)
     Column(Modifier.fillMaxSize()) {
         RommTopBar(title = title, subtitle = subtitle, onBack = onBack) {
             // Not on the Installed shelf: its list is the server's pages sieved through the local
@@ -179,9 +193,10 @@ fun LibraryScreen(
             searchPlaceholder = if (onlyPresent) null else stringResource(R.string.search_in_placeholder, title),
             searchOpen = searchOpen,
             onSearchOpen = { searchOpen = it },
+            onBackdrop = { backdrop = it },
         )
         // The queue bar must follow the user everywhere downloads can be started.
-        DownloadMiniBar(onClick = onOpenDownloads)
+        DownloadMiniBar(onClick = onOpenDownloads, modifier = Modifier.padding(bottom = LocalNavBarInset.current))
     }
 }
 
@@ -210,6 +225,8 @@ fun LibraryContent(
     searchPlaceholder: String? = null,
     searchOpen: Boolean = false,
     onSearchOpen: (Boolean) -> Unit = {},
+    /** Receives the cover to blur behind the screen: the focused game, else the first visible. */
+    onBackdrop: (String?) -> Unit = {},
 ) {
     val layout = RommTheme.layout
     val context = LocalContext.current
@@ -326,12 +343,34 @@ fun LibraryContent(
         }
     }
     val currentLetter = remember(letters, anchorIndex) { vm.currentLetter(letters, anchorIndex)?.label }
+    // Every letter with games on screen, as the web strip lights them.
+    val visibleRange by remember(isGrid) {
+        derivedStateOf {
+            val info = if (isGrid) gridState.layoutInfo.visibleItemsInfo.map { it.index } else listState.layoutInfo.visibleItemsInfo.map { it.index }
+            (info.minOrNull() ?: 0) to (info.maxOrNull() ?: -1)
+        }
+    }
+    val visibleLetterSet = remember(letters, visibleRange) { visibleLetters(letters, visibleRange.first, visibleRange.second) }
     // No alphabet over results: the rail indexes the whole folder, not a result set. Keyed on the
     // applied term, so the grid reflows once when results land and once when they go, never per
     // keystroke, and stays put while the field is merely open.
     val railVisible = state.railAvailable && letters.any { it.offset != null } && items.itemCount > 0 && !resultsShown
 
     var focusedRom by remember { mutableStateOf<Rom?>(null) }
+    // Cell shape for this list: the TALLEST cover seen so far, so nothing is ever cut and a
+    // platform of square boxes (GBA, SNES PAL) gets square cells instead of 2:3 slots with a gap
+    // above every cover. Clamped so one odd scan cannot stretch the whole grid.
+    val slotKey = vm.slotKey
+    var slotRatio by remember(slotKey) { mutableFloatStateOf(CoverRatios.slot(slotKey) ?: COVER_RATIO) }
+    var slotSeen by remember(slotKey) { mutableStateOf(CoverRatios.slot(slotKey) != null) }
+    val onCoverRatio: (Float) -> Unit = { r ->
+        val c = r.coerceIn(0.6f, 1.4f)
+        if (!slotSeen || c < slotRatio) {
+            slotSeen = true
+            slotRatio = c
+            CoverRatios.putSlot(slotKey, c)
+        }
+    }
     // Survives leaving for a game and coming back, so B lands on the game you opened rather than
     // on the first card of the page.
     var lastFocused by rememberSaveable { mutableIntStateOf(0) }
@@ -484,6 +523,21 @@ fun LibraryContent(
         if (err.kind == ApiErrorKind.OFFLINE || err.kind == ApiErrorKind.TIMEOUT) vm.tryOffline()
     }
 
+    // Settles before it asks: scrolling fast through a platform would otherwise decode a new
+    // 1080p backdrop for every card the cursor brushes past.
+    val backdropRom = focusedRom ?: items.itemSnapshotList.getOrNull(firstVisible)
+    val backdropUrl = backdropRom?.let { it.coverSmall ?: it.coverLarge }
+    LaunchedEffect(backdropUrl) {
+        kotlinx.coroutines.delay(280)
+        onBackdrop(backdropUrl)
+    }
+    // Dual-screen handhelds: the other screen follows the cursor.
+    val dual = LocalDualScreen.current
+    LaunchedEffect(backdropRom?.id) {
+        kotlinx.coroutines.delay(200)
+        dual?.show(backdropRom)
+    }
+
     Column(modifier) {
         // The library's own offline mode swaps the pager to the Room cache, so it needs a way out
         // even more than the Platforms banner does.
@@ -496,14 +550,14 @@ fun LibraryContent(
                 // The keyboard's own search key: put it away, let go of the field, and hand the
                 // pad the results exactly as B does.
                 onSearch = { keyboard?.hide(); focusManager.clearFocus(); handOff() },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = layout.padding, vertical = 4.dp)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = layout.margin, vertical = 6.dp)
                     .focusRequester(fieldFr)
                     .focusProperties { canFocus = fieldWanted || touchMode }
                     .onFocusChanged { f ->
                         if (f.isFocused) fieldFocused = true
                         else if (fieldFocused) { fieldFocused = false; fieldWanted = false }
                     }
-                    .gamepadTextField(MaterialTheme.shapes.medium, onDismissed = { handOff() }),
+                    .gamepadTextField(PillShape, onDismissed = { handOff() }),
             )
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -523,8 +577,14 @@ fun LibraryContent(
                 }
                 else -> Row(Modifier.fillMaxSize()) {
                     BoxWithConstraints(Modifier.weight(1f).fillMaxSize()) {
-                        val columns = remember(maxWidth, layout) {
-                            (maxWidth / layout.coverMinCell).toInt().coerceIn(2, layout.maxColumns)
+                        // Width alone picks too few columns on a 16:9 handheld in landscape (about
+                        // 430 dp high): tall cells (Switch, PS2 cases) then fit one row, half cut.
+                        // So the cell is also capped by height: about one and a half rows visible.
+                        val columns = remember(maxWidth, maxHeight, layout, slotRatio) {
+                            val byWidth = (maxWidth / layout.coverMinCell).toInt()
+                            val coverH = (maxHeight - layout.padding * 2) / 1.55f - 30.dp
+                            val byHeight = if (coverH > 40.dp) (maxWidth / (coverH * slotRatio + layout.gap)).toInt() else byWidth
+                            maxOf(byWidth, byHeight).coerceIn(2, layout.maxColumns)
                         }
                         // Cells wider than a thumbnail get the full-resolution cover.
                         val largeCovers = remember(maxWidth, columns) { maxWidth / columns >= 110.dp }
@@ -538,24 +598,27 @@ fun LibraryContent(
                             LazyVerticalGrid(
                                 columns = GridCells.Fixed(columns),
                                 state = gridState,
-                                contentPadding = PaddingValues(layout.padding),
+                                contentPadding = PaddingValues(start = layout.margin, top = layout.padding, end = layout.margin, bottom = layout.padding + bottomOverlayPadding),
                                 horizontalArrangement = Arrangement.spacedBy(layout.gap),
                                 verticalArrangement = Arrangement.spacedBy(layout.gap),
                                 modifier = Modifier.fillMaxSize().focusRequester(containerFr).focusGroup()
                                     .gridDpadNavigation(gridFocus).rightStickScroll(gridState),
                             ) {
-                                items(count = items.itemCount, key = items.itemKey { it.id }, contentType = { "rom" }) { index ->
+                                items(count = items.itemCount, key = { i -> romKey(items.peek(i), i) }, contentType = { "rom" }) { index ->
                                     val rom = items.peek(index)
                                     if (rom == null) {
-                                        GameCardSkeleton()
+                                        GameCardSkeleton(slotRatio = slotRatio)
                                     } else {
                                         GameCard(
                                             rom = rom,
                                             status = statusOf(rom, presence, progress),
                                             showPlatform = showPlatform,
-                                            platformIconUrl = if (showPlatform) vm.platformIconUrl(rom.platformSlug) else null,
-                                            modifier = Modifier.gridFocusItem(index, gridFocus),
+                                            platformIconUrl = null,
+                                            platformIconUrls = if (showPlatform) vm.platformIconUrls(rom.platformSlug) else emptyList(),
+                                            modifier = Modifier.gridFocusItem(index, gridFocus).cascadeIn(index, rom.id),
                                             largeCover = largeCovers,
+                                            slotRatio = slotRatio,
+                                            onCoverRatio = onCoverRatio,
                                             onFocused = { focusedRom = it; lastFocused = index },
                                             selecting = selecting,
                                             selected = picked.containsKey(rom.id),
@@ -573,10 +636,10 @@ fun LibraryContent(
                         } else {
                             LazyColumn(
                                 state = listState,
-                                contentPadding = PaddingValues(vertical = 4.dp, horizontal = layout.padding / 2),
+                                contentPadding = PaddingValues(start = layout.margin - 6.dp, top = 4.dp, end = layout.margin - 6.dp, bottom = 4.dp + bottomOverlayPadding),
                                 modifier = Modifier.fillMaxSize().focusRequester(containerFr).focusGroup().focusRestorer().rightStickScroll(listState),
                             ) {
-                                items(count = items.itemCount, key = items.itemKey { it.id }, contentType = { "row" }) { index ->
+                                items(count = items.itemCount, key = { i -> romKey(items.peek(i), i) }, contentType = { "row" }) { index ->
                                     val rom = items.peek(index)
                                     if (rom == null) {
                                         GameRowSkeleton()
@@ -605,12 +668,12 @@ fun LibraryContent(
                         JumpLabel(jumpLabel, Modifier.align(Alignment.Center))
                     }
                     if (railVisible) {
-                        AlphabetRail(letters = letters, current = currentLetter, onJump = ::jump, onRelease = { holdHints = false })
+                        AlphabetRail(letters = letters, current = currentLetter, onJump = ::jump, onRelease = { holdHints = false }, modifier = Modifier.padding(bottom = bottomOverlayPadding), visible = visibleLetterSet)
                     }
                 }
             }
         }
-        PadBar(installed, isGrid, handleDownloadsShortcut, selecting, searchable, searchOpen, fieldFocused, railVisible) {
+        PadBar(installed, isGrid, handleDownloadsShortcut, selecting, searchable, searchOpen, fieldFocused, railVisible, focusedRom?.id) {
             // Select searches this folder. Already open: it puts the cursor back in the field, so
             // refining a term is one press away from the results. B is the only way out.
             if (searchable && !selecting) {
@@ -619,8 +682,12 @@ fun LibraryContent(
             // Installed shelf: the file is already on the card, so X could only offer to
             // overwrite it. Uninstall and download-again live in the ≡ menu, which is the one
             // place either of them belongs.
-            // X has no job in a normal library: a download starts in one place only, the game's own
-            // page. On the Installed shelf X opens the multi-select, and once open it IS the delete.
+            // X in a normal library downloads the game under the cursor, as the game page's button
+            // does (asking first if it is already on the device). On the Installed shelf X opens
+            // the multi-select, and once open it IS the delete.
+            if (!installed && !selecting && !fieldFocused) {
+                focusedRom?.let { rom -> bind(GamepadAction.DOWNLOAD, R.string.action_download) { vm.quickDownload(rom) } }
+            }
             if (installed) {
                 if (selecting) {
                     bind(GamepadAction.DOWNLOAD, R.string.action_delete) {
@@ -703,45 +770,18 @@ private fun FolderSearchField(
     onSearch: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val interaction = remember { MutableInteractionSource() }
-    val colors = OutlinedTextFieldDefaults.colors()
-    val shape = MaterialTheme.shapes.medium
     // The clear button is for fingers. On the pad, Up from the first result used to land on it
     // instead of leaving the field alone; the pad clears by deleting or closes with B.
     val touchMode = LocalInputModeManager.current.inputMode == InputMode.Touch
-    BasicTextField(
-        value = value,
-        onValueChange = onValueChange,
-        singleLine = true,
-        textStyle = MaterialTheme.typography.bodyLarge.copy(color = LocalContentColor.current),
-        cursorBrush = SolidColor(RommTheme.colors.primary),
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { onSearch() }),
-        interactionSource = interaction,
-        modifier = modifier,
-        decorationBox = { inner ->
-            OutlinedTextFieldDefaults.DecorationBox(
-                value = value,
-                innerTextField = inner,
-                enabled = true,
-                singleLine = true,
-                visualTransformation = VisualTransformation.None,
-                interactionSource = interaction,
-                placeholder = { Text(placeholder, maxLines = 1) },
-                leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                trailingIcon = {
-                    if (value.isNotEmpty()) {
-                        IconButton(onClick = { onValueChange("") }, modifier = Modifier.focusProperties { canFocus = touchMode }) {
-                            Icon(Icons.Rounded.Close, stringResource(R.string.action_clear))
-                        }
-                    }
-                },
-                colors = colors,
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                container = {
-                    OutlinedTextFieldDefaults.Container(enabled = true, isError = false, interactionSource = interaction, colors = colors, shape = shape)
-                },
-            )
-        },
-    )
+    RommSearchField(value, onValueChange, placeholder, onSearch, modifier, clearFocusable = touchMode)
 }
+
+
+/**
+ * Grid key for a ROM at [index]. The id alone crashed the grid ("Key 532 was already used"):
+ * when two games tie on the sort, the server can return the same one at the end of a page and
+ * the start of the next. The index keeps keys unique; with placeholders on, a game keeps its
+ * index, so the key stays stable for scrolling and focus.
+ */
+private fun romKey(rom: com.rommmobile.app.data.repo.Rom?, index: Int): Any =
+    if (rom == null) "slot-$index" else "${rom.id}@$index"
