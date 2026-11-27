@@ -1,106 +1,53 @@
-# RomMMobile
+# RomMMobile (fork)
 
-Android companion app for **[RomM](https://romm.app)**, the self-hosted ROM manager. Browse your server's library and **download games straight into the right folder of the frontend you already use** (ES-DE, Daijishō, Pegasus and more). Built for Android handhelds with a built-in gamepad: every screen works without touching the display. Quack.
+Android app for **[RomM](https://romm.app)**: browse your RomM library and download games straight into your frontend's folders (ES-DE, Daijishō, Pegasus…), entirely from the gamepad. It does not launch games; your frontend does.
 
-RomMMobile **does not launch games**: that is your frontend's job. The app gets the ROMs onto the device, in the right place, with no half-written files. Like a rubber chicken with a pulley in the middle: useless on its own, but it gets you across.
+> **Personal fork.** This is a fork of [pippopapera/RomMMobile](https://github.com/pippopapera/RomMMobile) made for my own use on an AYN Thor and shared with a few friends. It restyles the app after the RomM web v2 interface and adds a second-screen view. No support or roadmap promised, not affiliated with RomM or the original project. For the original app, see [its releases](https://github.com/pippopapera/RomMMobile/releases).
 
-> **About this fork.** This is [Celthium/RomMMobile](https://github.com/Celthium/RomMMobile), a fork of [pippopapera/RomMMobile](https://github.com/pippopapera/RomMMobile). The `ui-v2` branch restyles the app after the RomM web **v2** interface, adds a **second-screen** view for dual-screen handhelds (AYN Thor) and a setup that works entirely from the pad. Everything else (library, downloads, folder mapping) comes from the original project.
-
-## What it does
-
-- **Platforms, collections, search**: your RomM library as it is on the server, in the RomM v2 look: covers at their real aspect ratio, region flags, alternate versions, an alphabet rail to jump to a letter.
-- **Game page**: overview, media (screenshots and clips) and files tabs, flipped with LB / RB. Download the game, or its DLC, updates and mods one file at a time.
-- **Second screen**: on dual-screen handhelds the other screen follows the cursor, with the platform, or the game's clips, screenshots and an info block (logo, tags, summary). The screens can be swapped from Settings.
-- **Installed**: what is actually on the SD card, per platform, with space used, multi-select and uninstall. The SD card never lies, unlike Stan selling used ships.
-- **Download queue**: resume after interruption, hash verification, zip extraction, one folder per game on disc-based systems, progress notification. No partial file ever lands in the frontend's folders. Not even if LeChuck pulls the plug.
-- **Automatic folder mapping**: finds the folders your launcher already has and writes into them; if something is missing, it asks once.
-- **Firmware and BIOS** from the server, downloaded into RetroArch's system folder.
-- **Gamepad first**: the built-in pad is detected and mapped on its own, button glyphs follow your layout (A at the bottom or on the right), hints at the bottom of every screen, right-stick scrolling.
-- **LAN and remote**: a home address and a public one (Cloudflare Access supported), picked automatically depending on where you are.
-- Dark and light theme, English, French and Italian, layouts for 4:3 screens, square screens, phones, tablets and TV.
-
-## Requirements
-
-- A **RomM 5.x** server reachable from the device.
-- **Android 8.0** (API 26) or later. The original app was tested on the Retroid Pocket Classic; this fork on the **AYN Thor** (both screens). The layout is also designed for the RG Cube, Retroid Pocket 5, Odin 2, phones, tablets and Android TV. Not tested on a pirate ship, but Wi-Fi on the open sea is terrible anyway.
-- A frontend already installed: ES-DE, Cocoon, Daijishō, Beacon, iiSU, Pegasus, or a custom folder layout.
+| Platforms | Game list |
+|---|---|
+| ![Platforms](docs/screenshots/platforms.jpg) | ![Game list](docs/screenshots/library.jpg) |
+| **Game page** | **Settings** |
+| ![Game page](docs/screenshots/game.jpg) | ![Settings](docs/screenshots/settings.jpg) |
+| **Second screen: game** | **Second screen: platform** |
+| ![Second screen, game](docs/screenshots/second-screen-game.jpg) | ![Second screen, platform](docs/screenshots/second-screen-platform.jpg) |
+| **Setup** | |
+| ![Setup](docs/screenshots/setup.jpg) | |
 
 ## Install
 
 [<img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Get it on Obtainium" height="54">](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/Celthium/RomMMobile)
 
-1. Get the APK:
-   - **with [Obtainium](https://github.com/ImranR98/Obtainium)** (recommended): open the badge above on the device, or add `https://github.com/Celthium/RomMMobile` in Obtainium. It installs the latest release and keeps it up to date;
-   - or download it from the [latest release](https://github.com/Celthium/RomMMobile/releases/latest).
+Add it in [Obtainium](https://github.com/ImranR98/Obtainium) (badge above, or `https://github.com/Celthium/RomMMobile`) to get updates, or download the APK from the [latest release](https://github.com/Celthium/RomMMobile/releases/latest).
 
-   The fork installs as its own app (`com.celthium.rommmobile`), next to the original one if you have it. The original app is still on the [original Releases page](https://github.com/pippopapera/RomMMobile/releases).
-2. Without Obtainium: copy the APK to the device and open it (your file manager needs the "install unknown apps" permission). Unknown to Android, not to you.
-3. On first launch the setup wizard asks, in order:
-   - **Controls**: a built-in pad is recognised and mapped automatically; pick where A is printed (bottom or right). An unknown pad is recorded one button at a time.
-   - **Server**: the RomM address (`http://ip:port` at home, or the HTTPS domain). It is probed right away and the server version is shown.
-   - **Sign in**: pair with a QR code (device code, nothing to type), or username and password, or a client token generated by RomM.
-   - **Frontend**: which launcher you use, so folders get the right names.
-   - **ROM folder**: the root your frontend reads games from (for example `ROMs` on the SD card).
-   - **Summary**: the platform → folder table, already filled with what was found.
+It installs as its own app (`com.celthium.rommmobile`), next to the original. Needs a **RomM 5.x** server, **Android 8+** and a frontend already set up.
 
-Everything can be changed later from **Settings**.
+## What's in this fork
 
-## Gamepad controls
+- **RomM v2 look**: side rail, covers at their real ratio, game page with Overview / Media / Files tabs.
+- **Second screen** (dual-screen handhelds): the other screen shows the platform or game under the cursor, with clips and screenshots. Screens can be swapped.
+- **Setup from the pad**: controller detected and mapped automatically, Xbox or Nintendo button layout, QR-code sign-in.
+- **Downloads**: DLC, updates, mods and BIOS per file; X on a grid downloads the game.
+- **Settings** by category, **French** translation.
+
+From the original app: library, collections, search, installed shelf, download queue, automatic folder mapping, LAN / remote addresses.
+
+## Controls
 
 | Button | Action |
 |---|---|
-| A | Open / confirm |
-| B | Back (on the Home screen: press twice to exit) |
-| X | Download the game under the cursor (grid or game page); in Installed: multi-select, then delete |
+| A / B | Open / back |
+| X | Download the game under the cursor |
 | Y | Grid / list |
-| L1 / R1 | Previous / next letter where a letter index is shown; previous / next tab elsewhere (game page, collections, sign-in, settings); hold to run through the alphabet |
+| L1 / R1 | Previous / next letter or tab |
 | L2 / R2 | Previous / next section |
-| L3 | Search |
-| R3 | Download queue |
-| Start / Select | Sorting / search and context menu |
-| Right stick | Continuous scrolling |
+| Start / Select | Sort / search |
+| L3 / R3 | Search / download queue |
 
-The bar at the bottom always shows the buttons that are active on the current screen, drawn the way your pad prints them. Fighting like a dairy farmer remains optional.
+## Build
 
-## Repository layout
-
-| Path | Contents |
-|---|---|
-| `app/` | App sources |
-| `release/` | Current APK of the original app for sideloading |
-| `assets/platform_map.json` | Mapping table from RomM platforms to launcher folders |
-
-## Documentation
-
-The reading order is the number order, like the three trials to become a pirate. Except here there are six.
-
-| File | Contents |
-|---|---|
-| [docs/01-PRODUCT-SPEC.md](docs/01-PRODUCT-SPEC.md) | What the app does, what it does NOT do, user flows, onboarding |
-| [docs/02-UI-DESIGN-SYSTEM.md](docs/02-UI-DESIGN-SYSTEM.md) | RomM v2 look (exact tokens), responsive layouts, second screen, gamepad |
-| [docs/03-ARCHITECTURE.md](docs/03-ARCHITECTURE.md) | Stack, modules, storage, download engine |
-| [docs/04-ROMM-API.md](docs/04-ROMM-API.md) | Verified RomM 5.x API contract |
-| [docs/05-LAUNCHER-MAPPING.md](docs/05-LAUNCHER-MAPPING.md) | The folder problem and its full solution |
-| [docs/06-ROADMAP.md](docs/06-ROADMAP.md) | Milestones, acceptance criteria, test matrix |
-
-## Building from source
-
-You need JDK 17 or later and the Android SDK with platform 37 (`setup-android-sdk.ps1` fetches it on Windows). The Gradle wrapper is included.
-
-```bash
-./gradlew :app:assembleRelease
-```
-
-The APK lands in `app/build/outputs/apk/release/`. The release build is minified with R8. It is signed with the key named by a `releaseSigning=<path to a properties file>` line in `local.properties` (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`); without one it falls back to the debug key: fine for sideloading, not for a store, and not able to update the published releases. Grog, on the other hand, is fine for nothing: it eats through the mug.
-
-Stack: Kotlin 2.3, Jetpack Compose, Hilt, Room, Paging 3, DataStore, Coil 3, OkHttp/Retrofit, WorkManager, Media3 ExoPlayer (second-screen clips). Android Gradle Plugin 9.4, Gradle 9.7.
-
-## Status
-
-Version **2.0.0** (fork), under active development. Working: library, installed shelf, downloads (with DLC, updates, mods and BIOS), folder mapping, firmware, gamepad navigation, second screen. Not yet: writing `gamelist.xml` for the frontend, syncing collections and save files.
-
-Bug reports and ideas for this fork: open an issue on [Celthium/RomMMobile](https://github.com/Celthium/RomMMobile/issues). If you see a three-headed monkey behind you, attach a screenshot.
+JDK 17+ and the Android SDK (platform 37), then `./gradlew :app:assembleRelease`. Without a `releaseSigning=` entry in `local.properties` the APK is signed with the debug key. Design and architecture notes are in [`docs/`](docs/).
 
 ## License
 
-[MIT](LICENSE): use it, change it, share it, just keep the author's name on it. Quack.
+[MIT](LICENSE). Original app by [pippopapera](https://github.com/pippopapera/RomMMobile).
