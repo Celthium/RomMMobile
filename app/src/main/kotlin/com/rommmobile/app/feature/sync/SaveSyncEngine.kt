@@ -16,7 +16,9 @@ import com.rommmobile.app.MainActivity
 import com.rommmobile.app.R
 import com.rommmobile.app.core.network.ApiErrorKind
 import com.rommmobile.app.core.network.ApiException
+import com.rommmobile.app.core.network.AuthMode
 import com.rommmobile.app.core.network.AuthStore
+import com.rommmobile.app.core.network.apiCall
 import com.rommmobile.app.core.storage.StorageRoot
 import com.rommmobile.app.core.util.FileLogger
 import com.rommmobile.app.data.api.ClientSaveDto
@@ -130,8 +132,15 @@ class SaveSyncEngine @Inject constructor(
         RetroArchConfig.detect(context, p.manualSavesDir, p.manualStatesDir)
     }
 
-    /** Scopes the session is known to lack; empty when it has them or the server did not say. */
-    fun missingScopes(): List<String> = authStore.grantedScopes?.let { g -> SYNC_SCOPES.filterNot { it in g } }.orEmpty()
+    /**
+     * Scopes the session lacks for the sync. A login made by this version stores what it was
+     * granted; a session kept from an older version (2.0 asked for read scopes only), or a pasted or
+     * paired token, did not, so ask the server with `GET /api/devices`, which needs `devices.read`,
+     * a scope that comes with the write ones.
+     */
+    suspend fun missingScopes(): List<String> = missingSyncScopes(authStore.grantedScopes, authStore.state.value.mode) {
+        (apiCall { api.devices() }.exceptionOrNull() as? ApiException)?.kind == ApiErrorKind.FORBIDDEN
+    }
 
     suspend fun runAll(auto: Boolean): RunResult = run(null, auto)
 
@@ -860,4 +869,16 @@ class SaveSyncEngine @Inject constructor(
 
         private fun now() = System.currentTimeMillis()
     }
+}
+
+/**
+ * [SaveSyncEngine.missingScopes] without the I/O: [granted] is what the login stored (null when it
+ * did not), [probeForbidden] asks the server. Basic auth carries the user's whole role, so it lacks
+ * nothing; a refused probe means every sync scope is missing, as for a 2.0 session.
+ */
+internal suspend fun missingSyncScopes(granted: Set<String>?, mode: AuthMode, probeForbidden: suspend () -> Boolean): List<String> = when {
+    granted != null -> SYNC_SCOPES.filterNot { it in granted }
+    mode == AuthMode.NONE || mode == AuthMode.BASIC -> emptyList()
+    probeForbidden() -> SYNC_SCOPES
+    else -> emptyList()
 }

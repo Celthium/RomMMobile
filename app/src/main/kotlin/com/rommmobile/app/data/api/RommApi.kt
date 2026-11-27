@@ -93,6 +93,10 @@ interface RommApi {
 
     /* ---------------- saves, states and sync (RomM 5.4, docs/04 section 9) ---------------- */
 
+    /** The user's devices; read only to learn whether the session has `devices.read`. */
+    @GET("api/devices")
+    suspend fun devices(): JsonElement
+
     @POST("api/devices")
     suspend fun createDevice(@Body body: DeviceCreateBody): DeviceCreateDto
 

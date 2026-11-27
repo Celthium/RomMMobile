@@ -6,6 +6,11 @@ import com.rommmobile.app.feature.sync.EsDeConfig
 import com.rommmobile.app.feature.sync.ItemStatus
 import com.rommmobile.app.feature.sync.RetroArchConfig
 import com.rommmobile.app.feature.sync.SaveSyncEngine
+import com.rommmobile.app.core.network.AuthMode
+import com.rommmobile.app.data.api.READ_SCOPES
+import com.rommmobile.app.data.api.SYNC_SCOPES
+import com.rommmobile.app.feature.sync.missingSyncScopes
+import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import java.io.File
 
@@ -72,5 +77,18 @@ class SaveSyncTest {
         assertThat(SaveSyncEngine.sameSecond("2026-11-27T13:24:22.754301+00:00", "2026-11-27T13:24:22+00:00")).isTrue()
         assertThat(SaveSyncEngine.sameSecond("2026-11-27T13:24:22+00:00", "2026-11-27T13:24:23+00:00")).isFalse()
         assertThat(SaveSyncEngine.sameSecond(null, null)).isTrue()
+    }
+
+    @Test
+    fun `a session without stored scopes asks the server`() = runBlocking {
+        // Logged in with 2.1: what the server granted is stored, no probe.
+        assertThat(missingSyncScopes((READ_SCOPES + SYNC_SCOPES).toSet(), AuthMode.OAUTH) { error("no probe") }).isEmpty()
+        assertThat(missingSyncScopes(READ_SCOPES.toSet(), AuthMode.CLIENT_TOKEN) { error("no probe") }).isEqualTo(SYNC_SCOPES)
+        // Kept from 2.0 (read scopes only): nothing stored, the server refuses GET /api/devices.
+        assertThat(missingSyncScopes(null, AuthMode.OAUTH) { true }).isEqualTo(SYNC_SCOPES)
+        assertThat(missingSyncScopes(null, AuthMode.CLIENT_TOKEN) { false }).isEmpty()
+        // Basic auth has the whole role; no session, nothing to say.
+        assertThat(missingSyncScopes(null, AuthMode.BASIC) { error("no probe") }).isEmpty()
+        assertThat(missingSyncScopes(null, AuthMode.NONE) { error("no probe") }).isEmpty()
     }
 }
