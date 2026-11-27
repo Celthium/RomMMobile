@@ -27,10 +27,14 @@ RomMMobile **does not launch games**: that is your frontend's job. The app gets 
 
 ## Install
 
-1. Download an APK:
-   - the official app from the [original Releases page](https://github.com/pippopapera/RomMMobile/releases);
-   - this fork's debug build from the [`ui-v2-debug` pre-release](https://github.com/Celthium/RomMMobile/releases/tag/ui-v2-debug). It installs next to the official app (package `com.rommmobile.app.debug`).
-2. Copy it to the device and open it (your file manager needs the "install unknown apps" permission). Unknown to Android, not to you.
+[<img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Get it on Obtainium" height="54">](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/Celthium/RomMMobile)
+
+1. Get the APK:
+   - **with [Obtainium](https://github.com/ImranR98/Obtainium)** (recommended): open the badge above on the device, or add `https://github.com/Celthium/RomMMobile` in Obtainium. It installs the latest release and keeps it up to date;
+   - or download it from the [latest release](https://github.com/Celthium/RomMMobile/releases/latest).
+
+   The fork installs as its own app (`com.celthium.rommmobile`), next to the original one if you have it. The original app is still on the [original Releases page](https://github.com/pippopapera/RomMMobile/releases).
+2. Without Obtainium: copy the APK to the device and open it (your file manager needs the "install unknown apps" permission). Unknown to Android, not to you.
 3. On first launch the setup wizard asks, in order:
    - **Controls**: a built-in pad is recognised and mapped automatically; pick where A is printed (bottom or right). An unknown pad is recorded one button at a time.
    - **Server**: the RomM address (`http://ip:port` at home, or the HTTPS domain). It is probed right away and the server version is shown.
@@ -87,13 +91,13 @@ You need JDK 17 or later and the Android SDK with platform 37 (`setup-android-sd
 ./gradlew :app:assembleRelease
 ```
 
-The APK lands in `app/build/outputs/apk/release/`. The release build is minified with R8 and signed with the debug key: fine for sideloading, not for a store. Grog, on the other hand, is fine for nothing: it eats through the mug. `./gradlew :app:assembleDebug` builds the debug variant used for the fork's pre-release.
+The APK lands in `app/build/outputs/apk/release/`. The release build is minified with R8. It is signed with the key named by a `releaseSigning=<path to a properties file>` line in `local.properties` (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`); without one it falls back to the debug key: fine for sideloading, not for a store, and not able to update the published releases. Grog, on the other hand, is fine for nothing: it eats through the mug.
 
 Stack: Kotlin 2.3, Jetpack Compose, Hilt, Room, Paging 3, DataStore, Coil 3, OkHttp/Retrofit, WorkManager, Media3 ExoPlayer (second-screen clips). Android Gradle Plugin 9.4, Gradle 9.7.
 
 ## Status
 
-Version **1.0.3**, under active development. Working: library, installed shelf, downloads (with DLC, updates, mods and BIOS), folder mapping, firmware, gamepad navigation, second screen. Not yet: writing `gamelist.xml` for the frontend, syncing collections and save files.
+Version **2.0.0** (fork), under active development. Working: library, installed shelf, downloads (with DLC, updates, mods and BIOS), folder mapping, firmware, gamepad navigation, second screen. Not yet: writing `gamelist.xml` for the frontend, syncing collections and save files.
 
 Bug reports and ideas for this fork: open an issue on [Celthium/RomMMobile](https://github.com/Celthium/RomMMobile/issues). If you see a three-headed monkey behind you, attach a screenshot.
 

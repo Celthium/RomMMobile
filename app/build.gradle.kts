@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -8,19 +10,43 @@ plugins {
     alias(libs.plugins.room)
 }
 
+// Release key kept outside the repository: local.properties may name a properties file
+// (storeFile, storePassword, keyAlias, keyPassword). Without it the release build falls back to
+// the debug key, as before, so anyone can still build and sideload.
+val releaseSigning: Properties? = run {
+    val local = Properties()
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { local.load(it) }
+    val path = local.getProperty("releaseSigning") ?: return@run null
+    val f = File(path)
+    if (!f.exists()) return@run null
+    Properties().also { p -> f.inputStream().use { p.load(it) } }
+}
+
 android {
     namespace = "com.rommmobile.app"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.rommmobile.app"
+        // Fork identity: installs next to the original app and updates on its own track.
+        applicationId = "com.celthium.rommmobile"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "1.0.3"
+        versionCode = 6
+        versionName = "2.0.0"
         vectorDrawables.useSupportLibrary = true
         // Only ship resources for the locales we actually translate.
         resourceConfigurations += listOf("en", "it", "fr")
+    }
+
+    signingConfigs {
+        releaseSigning?.let { rs ->
+            create("release") {
+                storeFile = file(rs.getProperty("storeFile"))
+                storePassword = rs.getProperty("storePassword")
+                keyAlias = rs.getProperty("keyAlias")
+                keyPassword = rs.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -28,8 +54,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Sideload build: sign with the debug key until the user provides a keystore.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
         debug {
             applicationIdSuffix = ".debug"
