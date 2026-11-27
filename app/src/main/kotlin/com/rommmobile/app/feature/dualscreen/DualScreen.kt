@@ -52,6 +52,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.SportsEsports
+import androidx.compose.material.icons.rounded.VideogameAsset
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -116,7 +121,27 @@ class DualScreenController @Inject constructor(
     /** Credentials only towards the user's own hosts: same client as covers, used for videos. */
     @com.rommmobile.app.di.ImageClient val http: okhttp3.OkHttpClient,
     settings: com.rommmobile.app.data.prefs.SettingsStore,
+    private val api: com.rommmobile.app.data.api.RommApi,
+    private val serverStore: com.rommmobile.app.core.network.ServerStore,
 ) {
+    /** The server's totals, for the other screen while nothing is selected; null until read. */
+    private val _stats = MutableStateFlow<ServerOverview?>(null)
+    val stats: StateFlow<ServerOverview?> = _stats.asStateFlow()
+    @Volatile private var statsAt = 0L
+
+    /** Reads `/api/stats` again when the overview shows and the last read is a few minutes old. */
+    fun refreshStats() {
+        val now = System.currentTimeMillis()
+        if (now - statsAt < 5 * 60_000L && _stats.value != null) return
+        statsAt = now
+        scope.launch {
+            runCatching { api.stats() }.onSuccess { st ->
+                val cfg = serverStore.config.value
+                _stats.value = ServerOverview(st, cfg.serverVersion, cfg.activeUrl?.substringAfter("://")?.trimEnd('/'))
+            }.onFailure { statsAt = 0L }
+        }
+    }
+
     /** What the info block shows (Settings > Appearance). */
     val preview: StateFlow<com.rommmobile.app.data.prefs.PreviewOptions> =
         settings.preview.stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, com.rommmobile.app.data.prefs.PreviewOptions())
@@ -338,7 +363,7 @@ private fun CompanionScreen(controller: DualScreenController) {
             when (c) {
                 is PlatformSheet -> PlatformSheetView(c, this)
                 is Rom -> GameSheet(c, controller.http, this, preview)
-                else -> if (setup) SetupIdle() else Idle()
+                else -> if (setup) SetupIdle() else Idle(controller)
             }
         }
     }
@@ -499,12 +524,70 @@ private fun SetupIdle() {
 }
 
 @Composable
-private fun Idle() {
+private fun Idle(controller: DualScreenController) {
     val colors = RommTheme.colors
-    Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Icon(Icons.Rounded.SportsEsports, null, tint = colors.onSurfaceMuted, modifier = Modifier.size(48.dp))
-        Spacer(Modifier.height(12.dp))
-        Text(stringResource(R.string.dual_idle), style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceSecondary)
+    val stats by controller.stats.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { controller.refreshStats() }
+    val st = stats
+    if (st == null) {
+        Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Icon(Icons.Rounded.SportsEsports, null, tint = colors.onSurfaceMuted, modifier = Modifier.size(48.dp))
+            Spacer(Modifier.height(12.dp))
+            Text(stringResource(R.string.dual_idle), style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceSecondary)
+        }
+        return
+    }
+    ServerOverviewView(st)
+}
+
+/** What the other screen shows while nothing is selected: the RomM library at a glance. */
+data class ServerOverview(val stats: com.rommmobile.app.data.api.StatsDto, val version: String?, val host: String?)
+
+@Composable
+private fun ServerOverviewView(o: ServerOverview) {
+    val colors = RommTheme.colors
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val nf = remember { java.text.NumberFormat.getIntegerInstance() }
+    val s = o.stats
+    val tiles = listOf(
+        Triple(Icons.Rounded.SportsEsports, nf.format(s.platforms), R.string.dual_stat_platforms),
+        Triple(Icons.Rounded.VideogameAsset, nf.format(s.roms), R.string.dual_stat_games),
+        Triple(Icons.Rounded.Storage, android.text.format.Formatter.formatShortFileSize(context, s.totalBytes), R.string.dual_stat_size),
+        Triple(Icons.Rounded.Save, nf.format(s.saves), R.string.dual_stat_saves),
+        Triple(Icons.Rounded.PhotoCamera, nf.format(s.states), R.string.dual_stat_states),
+        Triple(Icons.Rounded.Image, nf.format(s.screenshots), R.string.dual_stat_screenshots),
+    )
+    BoxWithConstraints(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        val columns = if (maxWidth > maxHeight * 1.3f) 3 else 2
+        Column(Modifier.widthIn(max = 720.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                stringResource(R.string.dual_stats_title),
+                style = MaterialTheme.typography.headlineSmall.copy(shadow = Shadow(Color(0x80000000), Offset(0f, 2f), 12f)),
+                color = colors.onBackground,
+            )
+            listOfNotNull(o.version?.let { "RomM $it" }, o.host).joinToString(" · ").takeIf { it.isNotEmpty() }?.let {
+                Spacer(Modifier.height(4.dp))
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceMuted)
+            }
+            Spacer(Modifier.height(20.dp))
+            tiles.chunked(columns).forEach { row ->
+                Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    row.forEach { (icon, value, label) ->
+                        Column(
+                            Modifier.weight(1f).clip(MaterialTheme.shapes.large).background(colors.surface).padding(horizontal = 16.dp, vertical = 14.dp),
+                        ) {
+                            Icon(icon, null, tint = colors.primaryLighten, modifier = Modifier.size(22.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = colors.onSurface, maxLines = 1)
+                            Text(stringResource(label), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceMuted, maxLines = 1)
+                        }
+                    }
+                    repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(stringResource(R.string.dual_stats_hint), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceMuted)
+        }
     }
 }
 

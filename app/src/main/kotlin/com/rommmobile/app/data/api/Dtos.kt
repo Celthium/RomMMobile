@@ -136,6 +136,8 @@ data class CollectionDto(
     @SerialName("is_public") val isPublic: Boolean = false,
     @SerialName("owner_username") val ownerUsername: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
+    /** Owner: only one's own collections can be changed. */
+    @SerialName("user_id") val userId: Int? = null,
 )
 
 @Serializable

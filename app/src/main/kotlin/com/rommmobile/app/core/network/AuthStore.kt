@@ -52,6 +52,8 @@ class AuthStore @Inject constructor(private val secure: SecureStore) {
         const val REFRESH = "auth_refresh"
         const val EXPIRES = "auth_expires"
         const val PASSWORD = "auth_password"
+        const val DEVICE = "auth_device_id"
+        const val SCOPES = "auth_scopes"
     }
 
     // Lazy for the same reason as ServerStore: load() performs several Android Keystore
@@ -102,8 +104,23 @@ class AuthStore @Inject constructor(private val secure: SecureStore) {
     fun beginVerification() { verifying = true }
     fun endVerification() { verifying = false }
 
+    /**
+     * RomM device this session is bound to (the device-code login returns one; the save sync
+     * registers one otherwise). Kept apart from [AuthState] so a token refresh never drops it.
+     */
+    val deviceId: String? get() = secure.get(K.DEVICE)
+
+    fun setDeviceId(id: String?) = secure.put(K.DEVICE, id)
+
+    /** Scopes the server granted, when it said (device-code login); null = unknown. */
+    val grantedScopes: Set<String>? get() = secure.get(K.SCOPES)?.split(' ')?.filter { it.isNotBlank() }?.toSet()
+
+    fun setGrantedScopes(scopes: Collection<String>?) = secure.put(K.SCOPES, scopes?.joinToString(" "))
+
     /** Session only: settings, folder mapping and download history are untouched. */
     fun clear(notify: Boolean = false) {
+        secure.put(K.DEVICE, null)
+        secure.put(K.SCOPES, null)
         persist(AuthState())
         if (notify && !verifying) _events.tryEmit(SessionEvent.Expired)
     }

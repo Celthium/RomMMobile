@@ -1,13 +1,20 @@
 package com.rommmobile.app.data.api
 
 import kotlinx.serialization.json.JsonElement
+import okhttp3.MultipartBody
+import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
+import retrofit2.http.HTTP
+import retrofit2.http.Multipart
 import retrofit2.http.POST
+import retrofit2.http.PUT
+import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 /**
  * RomM 5.x contract, verified against the user's server `/openapi.json` (5.2.0).
@@ -83,4 +90,86 @@ interface RommApi {
 
     @GET("api/firmware")
     suspend fun firmware(@Query("platform_id") platformId: Int? = null): List<FirmwareDto>
+
+    /* ---------------- saves, states and sync (RomM 5.4, docs/04 section 9) ---------------- */
+
+    @POST("api/devices")
+    suspend fun createDevice(@Body body: DeviceCreateBody): DeviceCreateDto
+
+    @GET("api/saves")
+    suspend fun saves(@Query("rom_id") romId: Int? = null, @Query("device_id") deviceId: String? = null): List<SaveDto>
+
+    @Multipart
+    @POST("api/saves")
+    suspend fun uploadSave(
+        @Query("rom_id") romId: Int,
+        @Query("emulator") emulator: String?,
+        @Query("slot") slot: String?,
+        @Query("device_id") deviceId: String?,
+        @Query("content_hash") contentHash: String?,
+        @Query("session_id") sessionId: Int?,
+        @Query("overwrite") overwrite: Boolean,
+        @Query("autocleanup") autocleanup: Boolean,
+        @Query("autocleanup_limit") autocleanupLimit: Int,
+        @Part saveFile: MultipartBody.Part,
+    ): SaveDto
+
+    @Streaming
+    @GET("api/saves/{id}/content")
+    suspend fun saveContent(
+        @Path("id") id: Int,
+        @Query("device_id") deviceId: String?,
+        @Query("session_id") sessionId: Int?,
+        @Query("optimistic") optimistic: Boolean,
+    ): ResponseBody
+
+    @POST("api/saves/{id}/downloaded")
+    suspend fun confirmSaveDownloaded(@Path("id") id: Int, @Body body: ConfirmDownloadBody): SaveDto
+
+    @POST("api/sync/negotiate")
+    suspend fun negotiate(@Body body: NegotiateBody): NegotiateDto
+
+    @POST("api/sync/sessions/{id}/complete")
+    suspend fun completeSync(@Path("id") id: Int, @Body body: SyncCompleteBody): JsonElement
+
+    @GET("api/states")
+    suspend fun states(@Query("rom_id") romId: Int): List<StateDto>
+
+    @Multipart
+    @POST("api/states")
+    suspend fun uploadState(@Query("rom_id") romId: Int, @Query("emulator") emulator: String?, @Part stateFile: MultipartBody.Part): StateDto
+
+    @Multipart
+    @PUT("api/states/{id}")
+    suspend fun replaceState(@Path("id") id: Int, @Part stateFile: MultipartBody.Part): StateDto
+
+    @Streaming
+    @GET("api/states/{id}/content")
+    suspend fun stateContent(@Path("id") id: Int): ResponseBody
+
+    /* ---------------- game page extras: achievements and collections ---------------- */
+
+    @GET("api/roms/{id}")
+    suspend fun romExtras(@Path("id") id: Int): RomExtrasDto
+
+    @GET("api/users/me")
+    suspend fun meRa(): MeRaDto
+
+    @POST("api/users/{id}/ra/refresh")
+    suspend fun raRefresh(@Path("id") userId: Int, @Body body: RaRefreshBody): JsonElement
+
+    @POST("api/collections/{id}/roms")
+    suspend fun addToCollection(@Path("id") id: Int, @Body body: CollectionRomsBody): JsonElement
+
+    @HTTP(method = "DELETE", path = "api/collections/{id}/roms", hasBody = true)
+    suspend fun removeFromCollection(@Path("id") id: Int, @Body body: CollectionRomsBody): JsonElement
+
+    /** Creates the user's Favourites collection the first time a game is starred, as the web app does. */
+    @Multipart
+    @POST("api/collections")
+    suspend fun createCollection(@Query("is_favorite") isFavorite: Boolean, @Part("name") name: okhttp3.RequestBody): CollectionDto
+
+    /** Library totals; `include_platform_stats` left off (per-platform numbers come from /platforms). */
+    @GET("api/stats")
+    suspend fun stats(): StatsDto
 }

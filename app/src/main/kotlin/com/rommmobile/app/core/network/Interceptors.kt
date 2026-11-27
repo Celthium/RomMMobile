@@ -126,7 +126,8 @@ class ErrorMappingInterceptor @Inject constructor(private val json: Json) : Inte
         val request = chain.request()
         val response = chain.proceed(request)
         val path = request.url.encodedPath
-        val isContent = path.contains("/content/")
+        // Binary bodies: ROM files (`/content/<name>`) and save / state files (`/{id}/content`).
+        val isContent = path.contains("/content/") || path.endsWith("/content")
         if (response.isSuccessful) {
             if (!isContent && path.contains("/api/")) {
                 val type = response.header("Content-Type").orEmpty()

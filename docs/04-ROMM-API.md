@@ -93,3 +93,70 @@ In parallel: `GET /api/heartbeat` (server version, no auth) and `GET /api/users/
 | 404 on known endpoints | likely version mismatch: show the server version and the endpoint attempted |
 | non-JSON response | reverse proxy or login page: dedicated message, not a parsing crash |
 | timeout/IO | retry with backoff, offline banner, content from cache |
+
+## 9. Saves and save states (verified on RomM 5.4.1)
+
+Source: `{base}/openapi.json` of the test server (5.4.1) and `backend/endpoints/{saves,states}.py`, `backend/endpoints/sync/`, `backend/handler/sync/comparison.py` at tag `5.4.1` of `rommapp/romm`.
+
+RomM stores the two kinds separately and the app keeps them separate too:
+
+| | Saves (SRAM, `.srm`, `.sav`…) | States (`.state`, `.state1`, `.state.auto`…) |
+|---|---|---|
+| List | `GET /api/saves?rom_id=` (also `rom_ids=` repeated, max 500, `platform_id`, `slot`, `device_id`) | `GET /api/states?rom_id=` (also `rom_ids=`, `platform_id`) |
+| Upload | `POST /api/saves?rom_id=&emulator=&slot=&device_id=&content_hash=&overwrite=&autocleanup=&autocleanup_limit=` multipart `saveFile` (+ optional `screenshotFile`) | `POST /api/states?rom_id=&emulator=` multipart `stateFile` (+ optional `screenshotFile`) |
+| Replace | `PUT /api/saves/{id}?device_id=&content_hash=` multipart `saveFile` | `PUT /api/states/{id}` multipart `stateFile` |
+| Download | `GET /api/saves/{id}/content?device_id=&optimistic=` | `GET /api/states/{id}/content` |
+| Confirm download | `POST /api/saves/{id}/downloaded` JSON `{device_id, content_hash}` | — |
+| Per-slot summary | `GET /api/saves/summary?rom_id=` → `{total_count, slots:[{slot, count, latest}]}` | — |
+| Delete | `POST /api/saves/delete` JSON `{saves:[ids]}` | `POST /api/states/delete` |
+| Device tracking | yes (`device_syncs[]`, `track`/`untrack`) | **no** |
+| Scopes | read `assets.read` (+ `devices.read` with `device_id`); write `assets.write` (+ `devices.write` with `device_id`) | `assets.read` / `assets.write` |
+
+`SaveSchema` / `StateSchema` (common fields): `id`, `rom_id`, `user_id`, `file_name`, `file_name_no_tags`, `file_name_no_ext`, `file_extension`, `file_size_bytes`, `emulator`, `created_at`, `updated_at` (ISO 8601, UTC), `missing_from_fs`, `screenshot`, `is_public`, `is_favorite`, `labels`. Saves add `slot`, `content_hash`, `origin_device_id`, `device_syncs[]` (`device_id`, `device_name`, `last_synced_at`, `is_untracked`, `is_current`). States add `core`.
+
+### Observed on the test server (2026-11-27)
+
+- `updated_at` comes **with microseconds** in upload replies (`2026-11-27T13:24:22.754301+00:00`) and **without** them in lists (`2026-11-27T13:24:22+00:00`): compare instants to the second, never strings.
+- For states, `file_name_no_tags` **drops the extension** (`Game.state9` → `Game`): match files on `file_name`.
+- A state uploaded again under the same `file_name` replaces the row (same `id`); states have no versions.
+
+### Content hash
+
+`content_hash` is the **MD5 hex digest of the file bytes** (32 chars). For a zip it is the MD5 of the lines `"<entry name>:<entry md5>"` joined with `\n` (entries sorted). States have no hash in the API: compare size + `updated_at`, or download.
+
+### Slots and versions (saves only)
+
+- Saves are paired on **(rom_id, slot)**. RomM's own RetroArch sync and web player use the slot **`autosave`**. A save uploaded **with** a slot gets a version tag appended to its stored name (about 22 bytes, e.g. `Game [2026-11-27_10-00-00].srm`) and the slot keeps several versions (`autocleanup=true&autocleanup_limit=N`, capped by the server's `MAX_SAVES_PER_SLOT`). An upload never destroys the previous version of a slot.
+- A save **without** a slot is "archival / manual": same `file_name` + `emulator` overwrites the row.
+- With `device_id` and a slot, an upload is refused with **409** "Slot has a newer save since your last sync" if the slot head changed since this device's last sync, unless `overwrite=true`. Re-uploading bytes identical to an existing version (same hash) just promotes that version to the slot head.
+- `emulator` is RomM's core id (`mgba`, `snes9x`, `genesis_plus_gx`…). RomM maps RetroArch's core folder names (`mGBA`, `Snes9x`, `Genesis Plus GX`) to these ids in `backend/handler/sync/retroarch/emulator_names.py` (table from `Covin90/romm-retroarch-sync`). Max 50 chars.
+
+### Devices and negotiation (saves only)
+
+- `POST /api/devices` registers a device (`name`, `platform`, `client`, `client_version`, `sync_mode`, `allow_existing=true`) → `{device_id}`. The device-code login (`/api/auth/device/token`) already returns a `device_id` bound to the token.
+- `POST /api/sync/negotiate` body `{device_id?, saves:[{rom_id, file_name, slot, emulator, content_hash, updated_at, file_size_bytes}], rom_ids?, emulators?, restore_unlisted}` → `{session_id, operations:[{action, rom_id, save_id, file_name, slot, emulator, reason, server_updated_at, server_content_hash}], total_upload, total_download, total_conflict, total_no_op, total_delete}`. `action` ∈ `upload`, `download`, `conflict`, `no_op`, `delete`. `device_id` may be omitted with a device-bound token.
+- Server rule (`compare_save_state`): same hash → `no_op`; with a sync baseline for this device, client changed **and** server changed since the last sync → `conflict`, only one changed → `upload`/`download`; without a baseline, the newer `updated_at` wins and equal timestamps with different content → `conflict`.
+- `rom_ids` scopes downloads to the ROMs installed on the device (read-only: omitting a ROM never deletes anything).
+- `POST /api/sync/sessions/{id}/complete` `{operations_completed, operations_failed}` closes the session.
+
+### RetroArch Cloud Sync (WebDAV)
+
+RomM 5.4 also exposes a WebDAV server for RetroArch's own **Cloud Sync** at `{base}/api/sync/retroarch/` (verified: `OPTIONS` → 401, auth required). It maps `saves/<core>/<file>` and `states/<core>/<file>` onto the same per-ROM assets (slot `autosave`). RetroArch then syncs itself when content starts and closes. This is an alternative to the app's sync, not something the app calls.
+
+## 10. Game page extras: RetroAchievements and collections (verified on RomM 5.4.1)
+
+| Need | Call |
+|---|---|
+| Achievement set | `GET /api/roms/{id}`: `ra_id`, `merged_ra_metadata.achievements[]` (`ra_id`, `title`, `description`, `points`, `num_awarded`, `num_awarded_hardcore`, `badge_path`/`badge_url`, `badge_path_lock`/`badge_url_lock`, `display_order`, `type`) |
+| User progress | `GET /api/users/me`: `ra_username`, `ra_progression.results[]` (`rom_ra_id`, `num_awarded`, `num_awarded_hardcore`, `earned_achievements[]` = `{id, date, date_hardcore}`, `id` being the achievement's `ra_id` as a string) |
+| Refresh progress | `POST /api/users/{id}/ra/refresh` JSON `{incremental: true}` |
+| Collections of the game | `GET /api/roms/{id}`: `user_collections[]` = `{id, name, is_smart}` |
+| User's collections | `GET /api/collections` (`user_id`, `owner_username`, `is_favorite`): only one's own can be changed |
+| Add / remove the game | `POST` / `DELETE /api/collections/{id}/roms` JSON `{rom_ids: [...]}` (atomic, no full list) |
+| Create Favourites | `POST /api/collections?is_favorite=true` multipart `name=Favourites` |
+
+Badges: `badge_path` is relative to RomM's resources (`{base}/assets/romm/resources/{path}`), `badge_url` is RetroAchievements' CDN. Collection changes need the `collections.write` scope (the Viewer group has it for its own collections).
+
+## 11. Server totals
+
+`GET /api/stats` (no auth needed on 5.4.1) -> `{PLATFORMS, ROMS, SAVES, STATES, SCREENSHOTS, TOTAL_FILESIZE_BYTES}` (+ `METADATA_COVERAGE`, `REGION_BREAKDOWN`; `include_platform_stats` adds per-platform numbers). Shown on the second screen while nothing is selected.

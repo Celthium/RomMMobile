@@ -32,6 +32,7 @@ class RomMApp : Application(), Configuration.Provider, SingletonImageLoader.Fact
     @Inject lateinit var settings: SettingsStore
     @Inject lateinit var gamepad: GamepadBus
     @Inject @ApplicationScope lateinit var appScope: CoroutineScope
+    @Inject lateinit var saveSync: com.rommmobile.app.feature.sync.SaveSyncScheduler
 
     override fun onCreate() {
         super.onCreate()
@@ -47,6 +48,8 @@ class RomMApp : Application(), Configuration.Provider, SingletonImageLoader.Fact
         }
         // Resume any queued downloads that survived a process death.
         downloadEngine.resumeAfterProcessStart()
+        // Save sync: hourly runs and the restore on return follow the sync settings.
+        saveSync.start()
     }
 
     override val workManagerConfiguration: Configuration
