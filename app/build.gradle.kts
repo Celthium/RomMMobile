@@ -20,7 +20,7 @@ android {
         versionName = "1.0.3"
         vectorDrawables.useSupportLibrary = true
         // Only ship resources for the locales we actually translate.
-        resourceConfigurations += listOf("en", "it")
+        resourceConfigurations += listOf("en", "it", "fr")
     }
 
     buildTypes {
@@ -141,6 +141,8 @@ dependencies {
 
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.datasource.okhttp)
 
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
