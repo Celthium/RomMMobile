@@ -39,6 +39,12 @@ class RomMApp : Application(), Configuration.Provider, SingletonImageLoader.Fact
         // The button map is read synchronously on every key, so it lives on the bus and follows
         // the preference from the first moment the process can receive input.
         appScope.launch { settings.buttonMap.collect { gamepad.map = it } }
+        // Glyphs light the corner where A is printed: the user's choice, else a guess.
+        appScope.launch {
+            settings.faceLayout.collect { chosen ->
+                com.rommmobile.app.core.input.PadLayout.face = chosen ?: com.rommmobile.app.core.input.FaceLayout.guess()
+            }
+        }
         // Resume any queued downloads that survived a process death.
         downloadEngine.resumeAfterProcessStart()
     }

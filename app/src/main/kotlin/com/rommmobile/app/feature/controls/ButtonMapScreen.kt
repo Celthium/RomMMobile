@@ -64,6 +64,11 @@ class ButtonMapViewModel @Inject constructor(
         .map { it?.let(ButtonMap::decode) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), handle.get<String>(KEY_PREVIOUS)?.let(ButtonMap::decode))
 
+    fun setFaceLayout(layout: com.rommmobile.app.core.input.FaceLayout) {
+        com.rommmobile.app.core.input.PadLayout.face = layout
+        viewModelScope.launch { store.setFaceLayout(layout) }
+    }
+
     fun set(next: ButtonMap) = viewModelScope.launch {
         val current = store.snapshot().buttonMap
         if (current == next) return@launch
@@ -105,7 +110,7 @@ fun ButtonMapScreen(onBack: () -> Unit) {
                 subtitle = stringResource(if (map.isDefault) R.string.settings_button_map_default else R.string.settings_button_map_custom),
                 onBack = onBack,
             )
-            LazyColumn(state = listState, modifier = Modifier.fillMaxSize().rightStickScroll(listState), contentPadding = PaddingValues(4.dp)) {
+            LazyColumn(state = listState, modifier = Modifier.fillMaxSize().rightStickScroll(listState), contentPadding = PaddingValues(vertical = 4.dp)) {
                 item {
                     Text(
                         stringResource(R.string.controls_table_intro),
@@ -121,6 +126,19 @@ fun ButtonMapScreen(onBack: () -> Unit) {
                         // A single button starts from the live map, so giving it a key another
                         // row holds swaps the two: the A/B swap of a Nintendo-layout pad in one go.
                         onClick = { capture = CaptureSession(listOf(button), map, refuseDuplicates = false) },
+                    )
+                }
+                item {
+                    val layoutNow = com.rommmobile.app.core.input.PadLayout.face
+                    val scope = androidx.compose.runtime.rememberCoroutineScope()
+                    SettingRow(
+                        title = stringResource(R.string.face_layout_title),
+                        subtitle = stringResource(if (layoutNow == com.rommmobile.app.core.input.FaceLayout.XBOX) R.string.face_layout_xbox else R.string.face_layout_nintendo),
+                        onClick = {
+                            val next = if (layoutNow == com.rommmobile.app.core.input.FaceLayout.XBOX) com.rommmobile.app.core.input.FaceLayout.NINTENDO else com.rommmobile.app.core.input.FaceLayout.XBOX
+                            vm.setFaceLayout(next)
+                        },
+                        trailing = { com.rommmobile.app.core.design.FaceButtonsGlyph(com.rommmobile.app.core.design.PadButton.A, size = 26.dp) },
                     )
                 }
                 item { SectionHeader(stringResource(R.string.controls_table_actions)) }

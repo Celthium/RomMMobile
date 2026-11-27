@@ -1,5 +1,12 @@
 package com.rommmobile.app.feature.onboarding
 
+import androidx.compose.material.icons.rounded.Key
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Dns
+import com.rommmobile.app.core.design.RommTextField
+import androidx.compose.foundation.border
+import com.rommmobile.app.core.design.LocalNavBarInset
 import com.rommmobile.app.feature.controls.MappingRow
 import com.rommmobile.app.feature.controls.CaptureSession
 import com.rommmobile.app.feature.controls.ButtonCaptureOverlay
@@ -45,7 +52,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -147,11 +153,31 @@ fun OnboardingScreen(onDone: () -> Unit) {
     // recorded: the first prompt is Up, which every d-pad reports the same way, so no map is
     // needed to begin. Once per wizard run, remembered in the ViewModel: a flag inside the step
     // would not survive leaving it, and a recorded map can equal the default (the Classic's).
+    // A pad that declares Android's standard buttons is configured on the spot, no presses asked;
+    // the recorder only opens by itself when nothing could be recognised.
+    var detectedPad by remember { mutableStateOf<String?>(null) }
+    // Coming back to this step later (or after a restart): still say which pad it is, as long as
+    // the saved mapping is the one that pad gets automatically.
+    val padMatchingMap = remember(state.buttonMap, state.buttonMapRecorded) {
+        if (!state.buttonMapRecorded) null else ButtonMap.detect()?.takeIf { it.second == state.buttonMap }?.first
+    }
     LaunchedEffect(state.step, state.loaded, hasGamepad) {
         if (state.step == STEP_CONTROLS && state.loaded && hasGamepad && !state.buttonMapRecorded && !state.controlsPrompted) {
             vm.markControlsPrompted()
-            capture = CaptureSession(CaptureSession.FULL_ORDER, ButtonMap.EMPTY, refuseDuplicates = true)
+            val found = ButtonMap.detect()
+            if (found != null) {
+                detectedPad = found.first
+                vm.setButtonMap(found.second)
+            } else {
+                capture = CaptureSession(CaptureSession.FULL_ORDER, ButtonMap.EMPTY, refuseDuplicates = true)
+            }
         }
+    }
+    // Dual screen: while the wizard runs, the other screen says so instead of "select a game".
+    val dual = com.rommmobile.app.feature.dualscreen.LocalDualScreen.current
+    androidx.compose.runtime.DisposableEffect(dual) {
+        dual?.setupMode?.value = true
+        onDispose { dual?.setupMode?.value = false }
     }
 
     BackHandler(enabled = state.step > 0) { vm.goTo(state.step - 1) }
@@ -174,21 +200,34 @@ fun OnboardingScreen(onDone: () -> Unit) {
             LinearProgressIndicator(progress = { (state.step + 1) / STEP_TITLES.size.toFloat() }, modifier = Modifier.fillMaxWidth().height(2.dp), color = colors.primary, trackColor = colors.surface, drawStopIndicator = {})
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (state.step) {
-                    STEP_CONTROLS -> ControlsStep(state) { capture = CaptureSession(CaptureSession.FULL_ORDER, ButtonMap.EMPTY, refuseDuplicates = true) }
-                    STEP_SERVER -> ServerStep(state, vm::onServerInput, vm::setAdvanced)
+                    STEP_CONTROLS -> ControlsStep(state, detectedPad ?: padMatchingMap, onLayout = vm::setFaceLayout) { capture = CaptureSession(CaptureSession.FULL_ORDER, ButtonMap.EMPTY, refuseDuplicates = true) }
+                    STEP_SERVER -> ServerStep(state, vm::onServerInput, vm::setAdvanced, onSubmit = { vm.confirmServer { vm.goTo(STEP_AUTH) } })
                     STEP_AUTH -> AuthStep(state, session, vm)
                     STEP_LAUNCHER -> LauncherStep(state.launcher, vm::setLauncher)
                     STEP_STORAGE -> StorageStep(state, vm)
                     else -> SummaryStep(state, vm)
                 }
             }
+        }
+            // Laid over the content, not under it: the step scrolls on beneath the fade instead of
+            // being cut off at the bar's top edge.
             // Console convention: the confirm button sits bottom-right and carries its glyph, so the
             // user reads "press A to continue" instead of hunting for it with the d-pad. It also
             // takes focus on every step that needs no typing, which is why a long list never has to
             // be scrolled through just to reach "Next".
             // Extra room on the sides: the focus ring is drawn outside the button, and at the screen
             // edge the window clipped its right half.
-            Row(Modifier.fillMaxWidth().background(colors.surface).padding(horizontal = layout.padding + 14.dp, vertical = 10.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            // Runs on under the system bar on a fade, like the app's other bottom bars, instead of a
+            // solid band stopping above it.
+            Row(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(com.rommmobile.app.core.design.softFadeBrush(colors.background, colors.isDark))
+                    .padding(start = layout.margin, end = layout.margin, top = 40.dp, bottom = 10.dp + LocalNavBarInset.current),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 if (state.step > 0) {
                     TextButton(
                         onClick = { vm.goTo(state.step - 1) },
@@ -201,12 +240,16 @@ fun OnboardingScreen(onDone: () -> Unit) {
                     Spacer(Modifier.width(8.dp))
                 }
                 val nextFr = remember { FocusRequester() }
+                val inputModes = androidx.compose.ui.platform.LocalInputModeManager.current
                 // Keyed on the recorder too: when it closes, focus lands on Next whatever a finger
                 // had focused underneath, and the next A continues instead of recording again.
                 LaunchedEffect(canNext, state.step, capture == null) {
                     // Not on the server step: its field is what needs the cursor, not Next.
                     if (canNext && state.step != STEP_SERVER && capture == null) {
                         delay(120)
+                        // Launched with a finger, Android is in touch mode, where buttons refuse
+                        // focus: A then did nothing until a d-pad press. With a pad, switch first.
+                        if (hasGamepad) inputModes.requestInputMode(androidx.compose.ui.input.InputMode.Keyboard)
                         runCatching { nextFr.requestFocus() }
                     }
                 }
@@ -228,7 +271,6 @@ fun OnboardingScreen(onDone: () -> Unit) {
                     if (hasGamepad) { Spacer(Modifier.width(6.dp)); PadGlyph(PadButton.A) }
                 }
             }
-        }
         capture?.let { session ->
             ButtonCaptureOverlay(
                 session = session,
@@ -259,23 +301,27 @@ private fun ServerStep(
     state: OnboardingState,
     onInput: (String) -> Unit,
     onAdvanced: (String, String, Boolean) -> Unit,
+    onSubmit: () -> Unit,
 ) {
     val colors = RommTheme.colors
     val layout = RommTheme.layout
     val fr = remember { FocusRequester() }
     var advanced by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { runCatching { fr.requestFocus() } }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(layout.padding * 2)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = layout.margin, end = layout.margin, top = STEP_TOP_GAP, bottom = NEXT_BAR_CLEAR + LocalNavBarInset.current)) {
         Text(stringResource(R.string.ob_server_body), style = MaterialTheme.typography.bodyLarge)
         Spacer(Modifier.height(16.dp))
-        OutlinedTextField(
+        RommTextField(
             value = state.serverInput,
             onValueChange = onInput,
-            singleLine = true,
-            label = { Text(stringResource(R.string.ob_server_label)) },
-            placeholder = { Text("http://192.168.50.11:8080") },
+            label = stringResource(R.string.ob_server_label),
+            placeholder = "http://192.168.50.11:8080",
+            leadingIcon = androidx.compose.material.icons.Icons.Rounded.Dns,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
-            modifier = Modifier.fillMaxWidth().widthIn(max = 520.dp).focusRequester(fr).gamepadTextField(MaterialTheme.shapes.small),
+            // "Done" on the keyboard, or A on the field, goes on as soon as the server answered.
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { if (state.probe is ProbeState.Ok) onSubmit() }),
+            modifier = Modifier.fillMaxWidth().widthIn(max = 520.dp),
+            fieldModifier = Modifier.focusRequester(fr).gamepadTextField(PillShape, onSubmit = { (state.probe is ProbeState.Ok).also { if (it) onSubmit() } }),
         )
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -328,9 +374,9 @@ private fun AdvancedServerDialog(
         Column(Modifier.verticalScroll(rememberScrollState())) {
             Text(stringResource(R.string.settings_cf_hint), style = MaterialTheme.typography.bodySmall, color = RommTheme.colors.onSurfaceMuted)
             Spacer(Modifier.height(8.dp))
-            OutlinedTextField(id, { id = it }, singleLine = true, label = { Text("CF-Access-Client-Id") }, modifier = Modifier.fillMaxWidth().gamepadTextField(MaterialTheme.shapes.small))
+            RommTextField(id, { id = it }, label = "CF-Access-Client-Id", modifier = Modifier.fillMaxWidth(), fieldModifier = Modifier.gamepadTextField(com.rommmobile.app.core.design.PillShape))
             Spacer(Modifier.height(8.dp))
-            OutlinedTextField(secret, { secret = it }, singleLine = true, label = { Text("CF-Access-Client-Secret") }, modifier = Modifier.fillMaxWidth().gamepadTextField(MaterialTheme.shapes.small))
+            RommTextField(secret, { secret = it }, label = "CF-Access-Client-Secret", modifier = Modifier.fillMaxWidth(), fieldModifier = Modifier.gamepadTextField(com.rommmobile.app.core.design.PillShape))
             Spacer(Modifier.height(4.dp))
             SwitchRow(
                 title = stringResource(R.string.settings_allow_insecure),
@@ -357,16 +403,45 @@ private fun AuthStep(state: OnboardingState, session: Session, vm: OnboardingVie
         }
     }
 
-    Column(Modifier.fillMaxSize().padding(horizontal = layout.padding)) {
+    // LB / RB flip the method, as they flip the tabs of a game page.
+    val methods = AuthMethod.entries
+    val hasPad by rememberHasGamepad()
+    com.rommmobile.app.core.input.GamepadActions(state.authMethod, session) { action ->
+        if (session is Session.LoggedIn) return@GamepadActions false
+        val i = methods.indexOf(state.authMethod)
+        when (action) {
+            com.rommmobile.app.core.input.GamepadAction.PREV_LETTER -> { if (i > 0) vm.setAuthMethod(methods[i - 1]); true }
+            com.rommmobile.app.core.input.GamepadAction.NEXT_LETTER -> { if (i < methods.lastIndex) vm.setAuthMethod(methods[i + 1]); true }
+            else -> false
+        }
+    }
+
+    // Arriving here from the address field, focus fell on the first thing left, the back arrow,
+    // which then showed its focus circle for no reason. Nothing is focused on arrival: the method
+    // is already shown selected, LB / RB change it, and the first d-pad press picks a target.
+    // (The password form takes its own field.)
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    LaunchedEffect(Unit) {
+        if (state.authMethod != AuthMethod.PASSWORD && session !is Session.LoggedIn) {
+            // After the step change has settled: the key release of the A that got here lands
+            // a moment later and is what put focus on the arrow.
+            delay(400)
+            focusManager.clearFocus()
+        }
+    }
+
+    Column(Modifier.fillMaxSize().padding(start = layout.margin, end = layout.margin, top = STEP_TOP_GAP)) {
         if (session is Session.LoggedIn) {
-            Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.CheckCircle, null, tint = colors.green); Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.ob_auth_logged_in, session.username ?: ""), style = MaterialTheme.typography.bodyLarge)
             }
         }
         // Each method says what it does right under the tabs: "Token" and "Password" mean
         // nothing on their own, and the user should not have to try one to find out.
-        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // Centred, like the code panel under it.
+        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+            if (hasPad && session !is Session.LoggedIn) com.rommmobile.app.core.design.KeycapGlyph("LB", Modifier.padding(end = 4.dp))
             AuthMethod.entries.forEach { m ->
                 val selected = m == state.authMethod
                 Text(
@@ -376,13 +451,15 @@ private fun AuthStep(state: OnboardingState, session: Session, vm: OnboardingVie
                     modifier = Modifier.gamepadFocusRing(PillShape).clip(PillShape).background(if (selected) colors.primary else colors.surface).clickable { vm.setAuthMethod(m) }.padding(horizontal = 12.dp, vertical = 6.dp),
                 )
             }
+            if (hasPad && session !is Session.LoggedIn) com.rommmobile.app.core.design.KeycapGlyph("RB", Modifier.padding(start = 4.dp))
         }
         if (session !is Session.LoggedIn) {
             Text(
                 stringResource(authMethodDesc(state.authMethod)),
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.onSurfaceMuted,
-                modifier = Modifier.padding(bottom = 4.dp),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp),
             )
         }
         val busy = state.auth == AuthUiState.Busy
@@ -395,7 +472,8 @@ private fun AuthStep(state: OnboardingState, session: Session, vm: OnboardingVie
                     stringResource(R.string.ob_auth_done),
                     style = MaterialTheme.typography.bodyMedium,
                     color = colors.onSurfaceMuted,
-                    modifier = Modifier.padding(top = 8.dp),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
             } else when (state.authMethod) {
                 AuthMethod.DEVICE -> DeviceMethod(state.device, vm)
@@ -423,8 +501,16 @@ private fun authMethodDesc(m: AuthMethod): Int = when (m) {
 private fun DeviceMethod(d: DeviceFlowState, vm: OnboardingViewModel) {
     val colors = RommTheme.colors
     val layout = RommTheme.layout
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(Modifier.height(8.dp))
+    // Centred in the space under the method's description (scrolls if it ever does not fit),
+    // rather than pressed up against it.
+    // Kept clear of the floating Next bar, so what is centred in here is centred in what shows.
+    BoxWithConstraints(Modifier.fillMaxSize().padding(bottom = NEXT_BAR_CLEAR + LocalNavBarInset.current)) {
+    val minH = maxHeight
+    Column(
+        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = minH),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
         val init = d.init
         when {
             d.error != null -> {
@@ -465,6 +551,7 @@ private fun DeviceMethod(d: DeviceFlowState, vm: OnboardingViewModel) {
         }
     }
 }
+}
 
 @Composable
 private fun PasswordMethod(busy: Boolean, vm: OnboardingViewModel) {
@@ -472,10 +559,10 @@ private fun PasswordMethod(busy: Boolean, vm: OnboardingViewModel) {
     var pass by rememberSaveable { mutableStateOf("") }
     val fr = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { fr.requestFocus() } }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).widthIn(max = 520.dp)) {
-        OutlinedTextField(user, { user = it }, singleLine = true, label = { Text(stringResource(R.string.auth_username)) }, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next), modifier = Modifier.fillMaxWidth().focusRequester(fr).gamepadTextField(MaterialTheme.shapes.small))
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(pass, { pass = it }, singleLine = true, label = { Text(stringResource(R.string.auth_password_field)) }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done), modifier = Modifier.fillMaxWidth().gamepadTextField(MaterialTheme.shapes.small))
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = NEXT_BAR_CLEAR + LocalNavBarInset.current)) {
+        RommTextField(user, { user = it }, label = stringResource(R.string.auth_username), leadingIcon = androidx.compose.material.icons.Icons.Rounded.Person, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next), modifier = Modifier.fillMaxWidth(), fieldModifier = Modifier.focusRequester(fr).gamepadTextField(PillShape))
+        Spacer(Modifier.height(14.dp))
+        RommTextField(pass, { pass = it }, label = stringResource(R.string.auth_password_field), leadingIcon = androidx.compose.material.icons.Icons.Rounded.Lock, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done), modifier = Modifier.fillMaxWidth(), fieldModifier = Modifier.gamepadTextField(PillShape))
         Spacer(Modifier.height(12.dp))
         Button(onClick = { vm.loginPassword(user, pass) }, enabled = !busy && user.isNotBlank() && pass.isNotEmpty(), modifier = Modifier.gamepadFocusRing(PillShape)) { Text(stringResource(R.string.action_login)) }
     }
@@ -485,10 +572,10 @@ private fun PasswordMethod(busy: Boolean, vm: OnboardingViewModel) {
 private fun TokenMethod(busy: Boolean, vm: OnboardingViewModel) {
     var token by rememberSaveable { mutableStateOf("") }
     val colors = RommTheme.colors
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).widthIn(max = 520.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = NEXT_BAR_CLEAR + LocalNavBarInset.current)) {
         Text(stringResource(R.string.auth_token_body), style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceMuted)
         Spacer(Modifier.height(8.dp))
-        OutlinedTextField(token, { token = it }, singleLine = true, label = { Text("rmm_…") }, modifier = Modifier.fillMaxWidth().gamepadTextField(MaterialTheme.shapes.small))
+        RommTextField(token, { token = it }, placeholder = "rmm_…", leadingIcon = androidx.compose.material.icons.Icons.Rounded.Key, modifier = Modifier.fillMaxWidth(), fieldModifier = Modifier.gamepadTextField(PillShape))
         Spacer(Modifier.height(12.dp))
         Button(onClick = { vm.loginToken(token) }, enabled = !busy && token.isNotBlank(), modifier = Modifier.gamepadFocusRing(PillShape)) { Text(stringResource(R.string.action_login)) }
     }
@@ -504,7 +591,7 @@ private fun LauncherStep(selected: Launcher, onSelect: (Launcher) -> Unit) {
         val columns = (maxWidth / 200.dp).toInt().coerceIn(1, 4)
         LazyVerticalGrid(
             columns = GridCells.Fixed(columns),
-            contentPadding = PaddingValues(layout.padding),
+            contentPadding = PaddingValues(start = layout.margin, end = layout.margin, top = STEP_TOP_GAP, bottom = NEXT_BAR_CLEAR + LocalNavBarInset.current),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -539,27 +626,94 @@ private fun LauncherStep(selected: Launcher, onSelect: (Launcher) -> Unit) {
  * has to cover Next and Back too); this step shows what is known and offers to record again.
  * Next means "keep what the table shows".
  */
+/**
+ * Where A is printed on the pad, as two cards each drawing the diamond with A lit in its corner:
+ * the one picked is what every on-screen hint will show.
+ */
 @Composable
-private fun ControlsStep(state: OnboardingState, onRecord: () -> Unit) {
+internal fun FaceLayoutPicker(onLayout: (com.rommmobile.app.core.input.FaceLayout) -> Unit) {
+    val colors = RommTheme.colors
+    val current = com.rommmobile.app.core.input.PadLayout.face
+    Text(stringResource(R.string.face_layout_title), style = MaterialTheme.typography.titleMedium)
+    Text(stringResource(R.string.face_layout_hint), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceMuted)
+    Spacer(Modifier.height(10.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        for (option in com.rommmobile.app.core.input.FaceLayout.entries) {
+            val selected = option == current
+            val shape = MaterialTheme.shapes.medium
+            Row(
+                Modifier
+                    .gamepadFocusRing(shape)
+                    .background(if (selected) colors.primary.copy(alpha = 0.14f) else colors.surface, shape)
+                    .border(1.dp, if (selected) colors.primary else colors.onSurface.copy(alpha = 0.12f), shape)
+                    .clickable { onLayout(option) }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                com.rommmobile.app.core.design.FaceButtonsGlyph(PadButton.A, size = 26.dp, layout = option, tint = if (selected) colors.primaryLighten else null)
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    stringResource(if (option == com.rommmobile.app.core.input.FaceLayout.XBOX) R.string.face_layout_xbox else R.string.face_layout_nintendo),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (selected) colors.onSurface else colors.onSurfaceMuted,
+                )
+            }
+        }
+    }
+}
+
+/** Room left under a step's last line so it can scroll up clear of the floating Next bar. */
+private val NEXT_BAR_CLEAR = 88.dp
+
+/** Space between the header (title + progress line) and a step's first line. */
+private val STEP_TOP_GAP = 28.dp
+
+/** Space between blocks of a step: intro or detected-pad notice, then the mapping. */
+private val SECTION_GAP = 32.dp
+
+@Composable
+private fun ControlsStep(state: OnboardingState, detectedPad: String?, onLayout: (com.rommmobile.app.core.input.FaceLayout) -> Unit, onRecord: () -> Unit) {
     val colors = RommTheme.colors
     val layout = RommTheme.layout
     val hasPad by rememberHasGamepad()
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(layout.padding * 2)) {
-        Text(stringResource(R.string.controls_intro), style = MaterialTheme.typography.bodyLarge)
-        Spacer(Modifier.height(16.dp))
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = layout.margin, end = layout.margin, top = STEP_TOP_GAP, bottom = NEXT_BAR_CLEAR + LocalNavBarInset.current)) {
+        // The "press each button" intro only makes sense when the pad still has to be recorded.
+        if (detectedPad == null) {
+            Text(stringResource(R.string.controls_intro), style = MaterialTheme.typography.bodyLarge)
+            Spacer(Modifier.height(SECTION_GAP))
+        }
         if (!hasPad) {
             Text(stringResource(R.string.controls_no_pad), style = MaterialTheme.typography.bodyMedium, color = colors.accent)
         } else {
+            if (detectedPad != null) {
+                // Recognised: say which pad, and that nothing needs pressing.
+                val shape = MaterialTheme.shapes.large
+                Row(
+                    Modifier.fillMaxWidth().background(colors.success.copy(alpha = 0.10f), shape)
+                        .border(1.dp, colors.success.copy(alpha = 0.4f), shape).padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(androidx.compose.material.icons.Icons.Rounded.CheckCircle, null, tint = colors.success, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(stringResource(R.string.controls_detected, detectedPad), style = MaterialTheme.typography.titleSmall, color = colors.onSurface)
+                        Text(stringResource(R.string.controls_auto), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceMuted)
+                    }
+                }
+                Spacer(Modifier.height(SECTION_GAP))
+            }
+            FaceLayoutPicker(onLayout)
+            Spacer(Modifier.height(SECTION_GAP))
             Text(stringResource(R.string.controls_current_title), style = MaterialTheme.typography.titleMedium)
             if (!state.buttonMapRecorded) {
                 // Numbers that were never measured on this pad must not read as if they were.
                 Text(stringResource(R.string.controls_default_caption), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceMuted)
             }
             Spacer(Modifier.height(8.dp))
-            LogicalButton.entries.forEach { MappingRow(it, state.buttonMap, Modifier.padding(vertical = 3.dp)) }
+            LogicalButton.entries.forEach { MappingRow(it, state.buttonMap, Modifier.padding(vertical = 6.dp)) }
             Spacer(Modifier.height(12.dp))
             OutlinedButton(onClick = onRecord, modifier = Modifier.gamepadFocusRing(PillShape)) {
-                Text(stringResource(if (state.buttonMapRecorded) R.string.controls_redo else R.string.controls_map))
+                Text(stringResource(if (detectedPad != null) R.string.controls_customize else if (state.buttonMapRecorded) R.string.controls_redo else R.string.controls_map))
             }
         }
     }
@@ -599,7 +753,7 @@ private fun StorageStep(state: OnboardingState, vm: OnboardingViewModel) {
     // grant it on, or after the user has been to that screen once and come back without it: the
     // sequence is enforced, but nobody is left with no way forward.
     val canChoose = allFiles || grantIntent == null || askedOnce
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(layout.padding * 2)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = layout.margin, end = layout.margin, top = STEP_TOP_GAP, bottom = NEXT_BAR_CLEAR + LocalNavBarInset.current)) {
         Text(stringResource(R.string.ob_storage_body), style = MaterialTheme.typography.bodyLarge)
         Spacer(Modifier.height(8.dp))
         Text(stringResource(if (allFiles) R.string.ob_storage_allfiles_ok else R.string.ob_storage_allfiles_missing), style = MaterialTheme.typography.bodyMedium, color = if (allFiles) colors.green else colors.accent)
@@ -658,10 +812,10 @@ private fun SummaryStep(state: OnboardingState, vm: OnboardingViewModel) {
         val found = state.summary.count { it.status == MappingStatus.FOUND }
         Text(
             if (state.summaryBusy) stringResource(R.string.ob_summary_scanning) else stringResource(R.string.ob_summary_body, found, state.summary.size),
-            style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = layout.padding * 2, vertical = 8.dp),
+            style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = layout.margin, end = layout.margin, top = STEP_TOP_GAP, bottom = 8.dp),
         )
         if (state.summaryBusy) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().rightStickScroll(listState), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().rightStickScroll(listState), contentPadding = PaddingValues(start = 4.dp, end = 4.dp, top = 4.dp, bottom = NEXT_BAR_CLEAR + LocalNavBarInset.current)) {
             items(state.summary, key = { it.platform.id }) { row ->
                 val (icon, tint, text) = when (row.status) {
                     MappingStatus.FOUND -> Triple(Icons.Rounded.CheckCircle, colors.green, row.mapping!!.relDir)

@@ -107,6 +107,39 @@ class ButtonMap private constructor(private val codes: Map<LogicalButton, Int>) 
             )
         )
 
+        /** Android's standard gamepad layout: what a pad with a proper key layout file sends. */
+        val STANDARD: ButtonMap = ButtonMap(
+            DEFAULT.codes + mapOf(
+                LogicalButton.START to KeyEvent.KEYCODE_BUTTON_START,
+                LogicalButton.SELECT to KeyEvent.KEYCODE_BUTTON_SELECT,
+            )
+        )
+
+        /**
+         * The built-in pad, if any, and the map it most likely needs, without asking for a single
+         * press: a gamepad that declares the four face buttons and Start/Select sends Android's
+         * standard codes (AYN Thor/Odin, Ayaneo, Anbernic...). The Retroid Pocket Classic is the
+         * one known exception, with Start and Select crossed. Null when nothing qualifies: then
+         * the recorder is the only way to know.
+         */
+        fun detect(): Pair<String, ButtonMap>? {
+            val wanted = intArrayOf(
+                KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_BUTTON_X, KeyEvent.KEYCODE_BUTTON_Y,
+                KeyEvent.KEYCODE_BUTTON_START, KeyEvent.KEYCODE_BUTTON_SELECT,
+            )
+            for (id in android.view.InputDevice.getDeviceIds()) {
+                val d = android.view.InputDevice.getDevice(id) ?: continue
+                if (d.isVirtual) continue
+                val pad = (d.sources and android.view.InputDevice.SOURCE_GAMEPAD) == android.view.InputDevice.SOURCE_GAMEPAD
+                if (!pad) continue
+                if (!d.hasKeys(*wanted).all { it }) continue
+                val name = d.name
+                val crossed = name.contains("retroid", ignoreCase = true) && name.contains("classic", ignoreCase = true)
+                return name to if (crossed) DEFAULT else STANDARD
+            }
+            return null
+        }
+
         /** Nothing bound: the wizard's starting point, filled one button at a time. */
         val EMPTY: ButtonMap = ButtonMap(emptyMap())
 
