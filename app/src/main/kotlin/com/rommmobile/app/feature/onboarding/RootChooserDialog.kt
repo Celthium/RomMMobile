@@ -1,5 +1,7 @@
 package com.rommmobile.app.feature.onboarding
 
+import androidx.compose.material.icons.rounded.Folder
+import com.rommmobile.app.core.design.RommTextField
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
@@ -15,7 +17,6 @@ import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -118,14 +119,14 @@ fun RootChooserDialog(
             if (!canPick) {
                 Text(stringResource(R.string.root_no_picker), style = MaterialTheme.typography.bodySmall, color = colors.accent)
                 Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
+                RommTextField(
                     value = manual,
                     onValueChange = { manual = it; manualError = null },
-                    singleLine = true,
-                    placeholder = { Text("/storage/emulated/0/ROMs") },
-                    isError = manualError != null,
-                    supportingText = manualError?.let { { Text(it) } },
-                    modifier = Modifier.fillMaxWidth().gamepadTextField(MaterialTheme.shapes.small),
+                    placeholder = "/storage/emulated/0/ROMs",
+                    leadingIcon = androidx.compose.material.icons.Icons.Rounded.Folder,
+                    error = manualError,
+                    modifier = Modifier.fillMaxWidth(),
+                    fieldModifier = Modifier.gamepadTextField(com.rommmobile.app.core.design.PillShape),
                 )
             }
         }

@@ -7,6 +7,7 @@ import androidx.paging.PagingSource
 import androidx.paging.PagingState
 import androidx.paging.map
 import com.rommmobile.app.core.network.ApiException
+import com.rommmobile.app.core.network.UrlNormalizer
 import com.rommmobile.app.core.network.ServerStore
 import com.rommmobile.app.core.network.apiCall
 import com.rommmobile.app.core.util.FileLogger
@@ -98,7 +99,23 @@ class RomRepository @Inject constructor(
             val dto = api.rom(id)
             val entity = dto.toEntity(json, System.currentTimeMillis())
             dao.upsert(entity)
-            entity.toModel(base, json)
+            val b = base
+            entity.toModel(b, json).copy(
+                screenshots = if (b == null) emptyList() else dto.mergedScreenshots.filter { it.isNotBlank() }.map { UrlNormalizer.resource(b, it) },
+                logo = if (b == null) null else dto.ssMetadata?.logoPath?.takeIf { it.isNotBlank() }?.let { l ->
+                    UrlNormalizer.resource(b, if (l.startsWith("/") || l.startsWith("http")) l else "assets/romm/resources/$l")
+                },
+                players = dto.metadatum?.playerCount?.takeIf { it.isNotBlank() },
+                videos = if (b == null) emptyList() else buildList {
+                    // `path_video` is relative to RomM's resources, like the web's versionedResourceUrl().
+                    dto.pathVideo?.takeIf { it.isNotBlank() }?.let { v ->
+                        add(UrlNormalizer.resource(b, if (v.startsWith("/") || v.startsWith("http")) v else "assets/romm/resources/$v"))
+                    }
+                    // Trailers dropped next to the ROM, as the web media shelf lists them.
+                    dto.files.filter { it.isTopLevel != false && it.fileName.substringAfterLast('.').lowercase() in VIDEO_EXTS }
+                        .forEach { f -> add(UrlNormalizer.join(b, "api/roms/${f.id}/files/content/" + java.net.URLEncoder.encode(f.fileName, "UTF-8").replace("+", "%20"))) }
+                },
+            )
         }
         if (net.isSuccess) return net
         val cached = dao.byId(id)?.toModel(base, json)
@@ -189,5 +206,8 @@ class RomRepository @Inject constructor(
         }
     }
 
-    companion object { const val PAGE = 40 }
+    companion object {
+        const val PAGE = 40
+        private val VIDEO_EXTS = setOf("mp4", "webm", "mkv", "mov", "m4v")
+    }
 }

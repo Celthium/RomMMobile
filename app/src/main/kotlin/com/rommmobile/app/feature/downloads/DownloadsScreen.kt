@@ -250,7 +250,7 @@ private fun DownloadRow(e: DownloadEntity, p: DownloadProgress?, onFocus: () -> 
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .padding(horizontal = RommTheme.layout.margin - 6.dp, vertical = 2.dp)
             .onFocusChanged { if (it.hasFocus) onFocus() }
             .gamepadFocusRow(shape)
             .clip(shape)

@@ -148,10 +148,10 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
             SectionHeader(stringResource(R.string.diag_state))
             info.rows.forEach { (k, v) -> SettingRow(title = k, subtitle = v) }
             SectionHeader(stringResource(R.string.diag_downloads))
-            if (info.downloads.isEmpty()) Text("-", modifier = Modifier.padding(horizontal = 14.dp), color = colors.onSurfaceMuted)
-            info.downloads.forEach { Text(it, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 1.dp)) }
+            if (info.downloads.isEmpty()) Text("-", modifier = Modifier.padding(horizontal = RommTheme.layout.margin), color = colors.onSurfaceMuted)
+            info.downloads.forEach { Text(it, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, fontSize = 11.sp, modifier = Modifier.padding(horizontal = RommTheme.layout.margin, vertical = 1.dp)) }
             SectionHeader(stringResource(R.string.diag_log))
-            Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp)) {
+            Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = RommTheme.layout.margin)) {
                 info.logTail.forEach { Text(it, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, fontSize = 10.sp, maxLines = 1, color = if (" E/" in it) colors.red else colors.onSurfaceMuted) }
             }
             Spacer(Modifier.height(24.dp))

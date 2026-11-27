@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Dual screen: hands input focus back to the app's screen after the companion opens. -->
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
     <!-- Sideloaded app: All files access is the primary storage strategy (works on TV boxes without a SAF picker). -->
     <uses-permission
         android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
@@ -51,6 +53,17 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Dual-screen companion shown on the main display while the app runs on the second one.
+             Own task and affinity: never in the app's back stack or in recents. -->
+        <activity
+            android:name=".feature.dualscreen.CompanionActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize|uiMode|density"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:resizeableActivity="true"
+            android:taskAffinity="${applicationId}.companion" />
 
         <receiver
             android:name=".feature.downloads.engine.DownloadActionReceiver"

@@ -250,6 +250,11 @@ class OnboardingViewModel @Inject constructor(
     /** Persisted at once: the rest of the wizard is navigated with the buttons just named. */
     fun markControlsPrompted() = _state.update { it.copy(controlsPrompted = true) }
 
+    fun setFaceLayout(layout: com.rommmobile.app.core.input.FaceLayout) {
+        com.rommmobile.app.core.input.PadLayout.face = layout
+        viewModelScope.launch { settings.setFaceLayout(layout) }
+    }
+
     fun setButtonMap(map: ButtonMap) {
         _state.update { it.copy(buttonMap = map, buttonMapRecorded = true) }
         viewModelScope.launch { settings.setButtonMap(map); log.i("Input", "button map ${map.encode()}") }

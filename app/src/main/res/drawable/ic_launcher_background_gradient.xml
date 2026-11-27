@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fork icon background: RomM violets in a diagonal gradient, so this build is told apart from
+     the original (flat #6043C8) on the launcher at a glance. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="315"
+        android:centerColor="#FF6043C8"
+        android:endColor="#FF241147"
+        android:startColor="#FFA18FFF"
+        android:type="linear" />
+</shape>

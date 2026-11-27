@@ -100,8 +100,17 @@ data class RomDto(
     @SerialName("missing_from_fs") val missingFromFs: Boolean = false,
     @SerialName("youtube_video_id") val youtubeVideoId: String? = null,
     @SerialName("merged_screenshots") val mergedScreenshots: List<String> = emptyList(),
+    /** Gameplay clip RomM scraped (ScreenScraper, LaunchBox, gamelist), relative to its resources. */
+    @SerialName("path_video") val pathVideo: String? = null,
+    @SerialName("ss_metadata") val ssMetadata: SsMediaDto? = null,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
+)
+
+/** The bits of `ss_metadata` the app shows: the game's logo (ScreenScraper "wheel"). */
+@Serializable
+data class SsMediaDto(
+    @SerialName("logo_path") val logoPath: String? = null,
 )
 
 @Serializable

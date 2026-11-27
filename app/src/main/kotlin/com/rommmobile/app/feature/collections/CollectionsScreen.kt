@@ -1,5 +1,12 @@
 package com.rommmobile.app.feature.collections
 
+import com.rommmobile.app.core.design.bottomOverlayPadding
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import com.rommmobile.app.core.design.ArtShapeLarge
+import com.rommmobile.app.core.design.DefaultCoverArt
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -37,6 +44,7 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -138,26 +146,43 @@ fun CollectionsScreen(onOpenLibrary: (LibraryRoute) -> Unit) {
     val layout = RommTheme.layout
     val colors = RommTheme.colors
 
+    // LB / RB step through the kinds of collection, as they flip tabs everywhere else.
+    val hasPad by com.rommmobile.app.core.input.rememberHasGamepad()
+    com.rommmobile.app.core.input.GamepadActions(tab) { action ->
+        val all = CollectionTab.entries
+        val i = all.indexOf(tab)
+        when (action) {
+            com.rommmobile.app.core.input.GamepadAction.PREV_LETTER -> { if (i > 0) vm.select(all[i - 1]); true }
+            com.rommmobile.app.core.input.GamepadAction.NEXT_LETTER -> { if (i < all.lastIndex) vm.select(all[i + 1]); true }
+            else -> false
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
         RommTopBar(title = stringResource(R.string.section_collections))
         Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).focusGroup().padding(horizontal = layout.padding, vertical = 6.dp),
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).focusGroup().padding(horizontal = layout.margin, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
+            if (hasPad) com.rommmobile.app.core.design.KeycapGlyph("LB", Modifier.padding(end = 4.dp))
             CollectionTab.entries.forEach { t ->
                 val selected = t == tab
                 Text(
                     stringResource(t.labelRes),
                     style = MaterialTheme.typography.labelLarge,
-                    color = if (selected) colors.white else colors.onSurface,
+                    // v2 pill tabs: the active one is the white "emphasis" pill, like the nav.
+                    color = if (selected) colors.onEmphasis else colors.onSurfaceSecondary,
                     modifier = Modifier
                         .gamepadFocusRing(PillShape)
                         .clip(PillShape)
-                        .background(if (selected) colors.primary else colors.surface)
+                        .background(if (selected) colors.emphasis else colors.surface)
+                        .border(1.dp, if (selected) colors.emphasis else colors.borderStrong, PillShape)
                         .clickable { vm.select(t) }
                         .padding(horizontal = 14.dp, vertical = 6.dp),
                 )
             }
+            if (hasPad) com.rommmobile.app.core.design.KeycapGlyph("RB", Modifier.padding(start = 4.dp))
         }
         val list = items
         when {
@@ -189,7 +214,7 @@ fun CollectionsScreen(onOpenLibrary: (LibraryRoute) -> Unit) {
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(columns),
                         state = state,
-                        contentPadding = PaddingValues(layout.padding),
+                        contentPadding = PaddingValues(start = layout.margin, top = layout.padding, end = layout.margin, bottom = layout.padding + bottomOverlayPadding),
                         horizontalArrangement = Arrangement.spacedBy(layout.gap),
                         verticalArrangement = Arrangement.spacedBy(layout.gap),
                         modifier = Modifier.fillMaxSize().focusGroup().gridDpadNavigation(gridFocus).rightStickScroll(state),
@@ -206,36 +231,46 @@ fun CollectionsScreen(onOpenLibrary: (LibraryRoute) -> Unit) {
     }
 }
 
+/**
+ * v2 collection tile (`Collections/CollectionTile.vue`): a rounded 2x2 mosaic of the first covers
+ * with a soft shadow, then the name and the game count underneath. No card behind the text.
+ */
 @Composable
 private fun CollectionCard(c: Collection, base: String?, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val colors = RommTheme.colors
-    val shape = MaterialTheme.shapes.large
+    val shape = ArtShapeLarge
     val covers = remember(c, base) { c.coverUrls(base) }
+    var focused by remember { mutableStateOf(false) }
     Column(
         modifier
-            .gamepadFocus(shape)
-            .clip(shape)
-            .background(colors.surface)
-            .clickable(onClick = onClick),
+            .gamepadFocus(shape, onFocused = { focused = it })
+            .clip(MaterialTheme.shapes.medium)
+            .clickable(onClick = onClick)
+            .padding(2.dp),
     ) {
-        Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(shape)) {
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(1f)
+                .shadow(if (focused) 14.dp else 4.dp, shape, ambientColor = Color.Black, spotColor = Color.Black)
+                .clip(shape)
+                .border(if (focused) 2.dp else 1.dp, if (focused) colors.primaryLighten else colors.border, shape),
+        ) {
+            val sq = androidx.compose.ui.graphics.RectangleShape
             when {
-                covers.size >= 4 -> Column(Modifier.fillMaxSize()) {
-                    Row(Modifier.weight(1f)) { CoverImage(covers[0], null, Modifier.weight(1f).fillMaxSize(), shape = androidx.compose.ui.graphics.RectangleShape); CoverImage(covers[1], null, Modifier.weight(1f).fillMaxSize(), shape = androidx.compose.ui.graphics.RectangleShape) }
-                    Row(Modifier.weight(1f)) { CoverImage(covers[2], null, Modifier.weight(1f).fillMaxSize(), shape = androidx.compose.ui.graphics.RectangleShape); CoverImage(covers[3], null, Modifier.weight(1f).fillMaxSize(), shape = androidx.compose.ui.graphics.RectangleShape) }
+                // Fewer than four: repeat them to fill the mosaic, as the web does.
+                covers.size >= 2 -> {
+                    val four = List(4) { covers[it % covers.size] }
+                    Column(Modifier.fillMaxSize()) {
+                        Row(Modifier.weight(1f)) { CoverImage(four[0], null, Modifier.weight(1f).fillMaxSize(), shape = sq); CoverImage(four[1], null, Modifier.weight(1f).fillMaxSize(), shape = sq) }
+                        Row(Modifier.weight(1f)) { CoverImage(four[2], null, Modifier.weight(1f).fillMaxSize(), shape = sq); CoverImage(four[3], null, Modifier.weight(1f).fillMaxSize(), shape = sq) }
+                    }
                 }
-                covers.isNotEmpty() -> CoverImage(covers[0], null, Modifier.fillMaxSize(), shape = androidx.compose.ui.graphics.RectangleShape)
-                else -> CoverImage(null, null, Modifier.fillMaxSize(), shape = androidx.compose.ui.graphics.RectangleShape)
-            }
-            StatusPill(c.romCount.toString(), colors.primaryDarken, modifier = Modifier.align(Alignment.TopEnd).padding(6.dp))
-        }
-        Column(Modifier.padding(8.dp)) {
-            Text(c.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
-            if (!c.description.isNullOrBlank()) {
-                Spacer(Modifier.height(2.dp))
-                Text(c.description, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                covers.isNotEmpty() -> CoverImage(covers[0], null, Modifier.fillMaxSize(), shape = sq)
+                else -> DefaultCoverArt(c.name, Modifier.fillMaxSize())
             }
         }
+        Spacer(Modifier.height(10.dp))
+        Text(c.name, style = MaterialTheme.typography.titleSmall, color = if (focused) colors.onSurface else colors.onSurfaceSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(pluralStringResource(R.plurals.games_count, c.romCount, c.romCount), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceMuted, maxLines = 1)
     }
 }
 
@@ -251,7 +286,7 @@ private fun GridSkeleton() {
             verticalArrangement = Arrangement.spacedBy(layout.gap),
             userScrollEnabled = false,
         ) {
-            items(8) { Column { Skeleton(Modifier.fillMaxWidth().aspectRatio(1f), MaterialTheme.shapes.large); Spacer(Modifier.height(6.dp)); Skeleton(Modifier.fillMaxWidth(0.7f).height(12.dp), MaterialTheme.shapes.small) } }
+            items(8) { Column { Skeleton(Modifier.fillMaxWidth().aspectRatio(1f), ArtShapeLarge); Spacer(Modifier.height(10.dp)); Skeleton(Modifier.fillMaxWidth(0.7f).height(12.dp), MaterialTheme.shapes.small) } }
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.rommmobile.app.feature.downloads.engine
 
+import com.rommmobile.app.data.db.DownloadKind
 import android.content.Context
 import android.os.StatFs
 import com.rommmobile.app.core.storage.DirectFileGateway
@@ -250,7 +251,10 @@ class DownloadTask(
             resultPath = gateway.displayPath(relDir)
             for (name in res.topLevelNames) {
                 val isDir = gateway.list(relDir).firstOrNull { it.name == name }?.isDirectory ?: false
-                localLibrary.registerDownloaded(entity.platformSlug, joinRel(relDir, name), name, if (isDir) 0 else gateway.sizeOf(relDir, name), isDir)
+                localLibrary.registerDownloaded(
+                    entity.platformSlug, joinRel(relDir, name), name, if (isDir) 0 else gateway.sizeOf(relDir, name), isDir,
+                    nameKey = com.rommmobile.app.data.repo.Rom.nameKeyOf(entity.fileName),
+                )
             }
             // A folder-per-game download counts as one present game under its folder name too.
             if (relDir.contains('/')) {
@@ -269,11 +273,17 @@ class DownloadTask(
             }
             resultPath = gateway.displayPath(relDir) + "/" + entity.fileName
             localLibrary.registerDownloaded(entity.platformSlug, joinRel(relDir, entity.fileName), entity.fileName, actual, false)
-            if (relDir.contains('/')) {
+            // A game in its own folder counts as present under that folder's name. Not for an
+            // extra: its folder is dlc/ or update/, and the game itself may not be there at all.
+            if (relDir.contains('/') && relDir.substringAfterLast('/').lowercase() !in LocalLibraryRepository.EXTRA_DIRS) {
                 localLibrary.registerDownloaded(entity.platformSlug, relDir, relDir.substringAfterLast('/'), 0, true)
             }
         }
         dao.complete(entity.id, resultPath)
+        // The game itself, not a DLC / update / BIOS: its card plays the "done" animation next time.
+        if (entity.kind == DownloadKind.ROM && entity.targetRelDir.substringAfterLast('/').lowercase() !in LocalLibraryRepository.EXTRA_DIRS) {
+            JustDownloaded.mark(entity.romId)
+        }
         publish(DownloadProgress(entity.id, entity.totalBytes, entity.totalBytes, 0, DownloadState.COMPLETED))
         log.i("Download", "completed ${entity.fileName} -> $resultPath")
         return TaskOutcome.Completed

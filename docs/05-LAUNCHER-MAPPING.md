@@ -106,3 +106,7 @@ To go further (covers and descriptions without making the frontend scrape) the r
 - `ES-DE/gamelists/<system>/gamelist.xml` — `<game>` entries with `<path>`, `<name>`, `<desc>`, `<releasedate>`, `<developer>`, `<publisher>`, `<genre>`, `<image>`.
 - `ES-DE/downloaded_media/<system>/covers/<ROM file name>.jpg` and `screenshots/`, association **by ROM file name**.
 - **Write `gamelist.xml` only while ES-DE is closed** and always with an atomic write (temporary file plus rename), merging the existing entries instead of overwriting the file.
+
+## Extras next to a game
+
+RomM files a game's extras by category (`dlc`, `update`, `mod`, `patch`, …). The game page lists them under **Files** and downloads each one into `<platform folder>/<game>/<category>/`, the layout emulators that read DLC and updates from the game's folder expect (Yuzu-style). An extra is never registered as the game itself, and a game folder that contains only extras is not reported as "on the device".

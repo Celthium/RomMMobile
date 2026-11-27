@@ -30,10 +30,12 @@ class LocalLibraryRepository @Inject constructor(
 ) {
     private val scanLock = Mutex()
 
-    private companion object {
+    companion object {
+        /** RomM's per-game category folders (`RomFileCategory`), where extras are laid out. */
+        val EXTRA_DIRS = setOf("dlc", "update", "updates", "mod", "mods", "patch", "patches", "hack", "hacks", "translation", "translations", "demo", "demos", "prototype", "cheat", "cheats", "manual", "manuals", "soundtrack", "screenshot", "screenshots")
         // Deliberately conservative: an extension goes here only if NO console uses it for a
         // ROM. "md" (Mega Drive), "dat" and "bin" belong to games and must never be listed.
-        val SIDECAR_EXTENSIONS = setOf(
+        private val SIDECAR_EXTENSIONS = setOf(
             "txt", "xml", "json", "ini", "cfg", "nfo", "html",
             "png", "jpg", "jpeg", "webp", "bmp", "mp4", "webm",
             "sav", "srm", "state", "st0", "st1", "ss0", "rtc", "eep", "mcr", "mcd", "vmp",
@@ -107,10 +109,16 @@ class LocalLibraryRepository @Inject constructor(
                 }
                 for (f in entries) {
                     if (isSidecar(f.name) || !seen.add(f.name)) continue
+                    // A game folder holding only extras (dlc/, update/, mod/... as laid out for a
+                    // DLC or an update downloaded alone) is not the game: without its own file
+                    // the app claimed "on device" and offered to uninstall a game never fetched.
+                    if (f.isDirectory && onlyExtras(gw, if (relDir.isEmpty()) f.name else "$relDir/${f.name}")) continue
                     rows += LocalFileEntity(
                         platformSlug = platformSlug,
                         fileName = f.name,
-                        nameKey = Rom.nameKeyOf(f.name),
+                        // A file the app put there keeps the key it was registered under (an
+                        // archive's contents are keyed on the archive's name, not their own).
+                        nameKey = previous[f.name]?.takeIf { it.downloadedByApp }?.nameKey ?: Rom.nameKeyOf(f.name),
                         sizeBytes = f.sizeBytes,
                         relPath = if (relDir.isEmpty()) f.name else "$relDir/${f.name}",
                         isDirectory = f.isDirectory,
@@ -124,6 +132,13 @@ class LocalLibraryRepository @Inject constructor(
         }
     }
 
+    /** True when [dir] contains nothing but RomM category folders (dlc, update, mod...). */
+    private fun onlyExtras(gw: com.rommmobile.app.core.storage.FileGateway, dir: String): Boolean {
+        val inside = runCatching { gw.list(dir) }.getOrNull() ?: return false
+        val real = inside.filterNot { isSidecar(it.name) }
+        return real.isNotEmpty() && real.all { it.isDirectory && it.name.lowercase() in EXTRA_DIRS }
+    }
+
     /**
      * Files that live next to ROMs but are not games. Indexing them would make the app claim a
      * game is present because a patch or a screenshot happens to share its name.
@@ -135,13 +150,18 @@ class LocalLibraryRepository @Inject constructor(
     }
 
     /** Called by the download engine right after a successful move: instant badge, no rescan. */
-    suspend fun registerDownloaded(platformSlug: String, relPath: String, fileName: String, sizeBytes: Long, isDirectory: Boolean) {
+    /**
+     * [nameKey] is the key the game is looked up by. For files pulled out of an archive it is the
+     * archive's (the name RomM knows the game by): "Double Dragon 3.zip" unpacks to a file with
+     * its own, longer name, and keyed on that the game never showed as on the device.
+     */
+    suspend fun registerDownloaded(platformSlug: String, relPath: String, fileName: String, sizeBytes: Long, isDirectory: Boolean, nameKey: String = Rom.nameKeyOf(fileName)) {
         dao.upsertAll(
             listOf(
                 LocalFileEntity(
                     platformSlug = platformSlug,
                     fileName = fileName,
-                    nameKey = Rom.nameKeyOf(fileName),
+                    nameKey = nameKey,
                     sizeBytes = sizeBytes,
                     relPath = relPath,
                     isDirectory = isDirectory,

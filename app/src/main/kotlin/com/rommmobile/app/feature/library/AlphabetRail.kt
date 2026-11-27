@@ -1,5 +1,6 @@
 package com.rommmobile.app.feature.library
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -49,9 +50,22 @@ import com.rommmobile.app.core.design.PillShape
 import com.rommmobile.app.core.design.RommTheme
 
 /**
- * The web app's vertical letter bar, fed by the server's `char_index`. Letters without
- * results are dimmed and skipped by trigger navigation. Touch: tap or drag continuously.
+ * The v2 web app's letter strip (`Gallery/AlphaStrip.vue`), fed by the server's `char_index`:
+ * 12 px bold letters, muted when the letter has games, near-invisible when it has none, and every
+ * letter whose games are ON SCREEN lit in brand violet on a small square chip, several at once
+ * when the visible rows span several letters. Touch: tap or drag continuously.
  */
+/** Letters whose games intersect the visible index range [first, last], for [AlphabetRail]. */
+fun visibleLetters(letters: List<LetterEntry>, first: Int, last: Int): Set<String> {
+    if (last < first) return emptySet()
+    val withOffsets = letters.filter { it.offset != null }.sortedBy { it.offset }
+    return withOffsets.mapIndexedNotNull { i, e ->
+        val start = e.offset!!
+        val end = (withOffsets.getOrNull(i + 1)?.offset ?: Int.MAX_VALUE) - 1
+        e.label.takeIf { start <= last && end >= first }
+    }.toSet()
+}
+
 @Composable
 fun AlphabetRail(
     letters: List<LetterEntry>,
@@ -61,6 +75,8 @@ fun AlphabetRail(
     /** The finger left the rail (or tapped): whatever the jumps deferred can happen now. */
     onRelease: () -> Unit = {},
     width: Dp = RommTheme.layout.alphabetRailWidth,
+    /** Letters on screen right now (see [visibleLetters]); wins over [current] when not empty. */
+    visible: Set<String> = emptySet(),
 ) {
     if (letters.isEmpty()) return
     val colors = RommTheme.colors
@@ -76,11 +92,14 @@ fun AlphabetRail(
     val jump by rememberUpdatedState(onJump)
     val release by rememberUpdatedState(onRelease)
 
-    BoxWithConstraints(modifier.width(width).fillMaxHeight()) {
+    // Same breathing room as the grid: away from the screen edge on the right and from the top
+    // bar's divider above, instead of a strip glued to both.
+    val gap = RommTheme.layout.gap
+    BoxWithConstraints(modifier.padding(top = gap, end = gap).width(width).fillMaxHeight()) {
         // Keep every letter. Compact the spacing on short screens, but never shrink the
         // text to make it fit: with very little height or large fonts the rail scrolls.
-        val minimumSlot = with(density) { 10.sp.toDp() } + 2.dp
-        val preferredSlot = maxOf(14.dp, minimumSlot)
+        val minimumSlot = with(density) { 14.sp.toDp() } + 4.dp
+        val preferredSlot = maxOf(26.dp, minimumSlot)
         // Use whole pixels so rounding each child cannot turn a fitting rail into an overflow.
         val slotPx = (constraints.maxHeight / letters.size).coerceIn(
             with(density) { minimumSlot.roundToPx() },
@@ -101,8 +120,8 @@ fun AlphabetRail(
         val maxPop = ((pitchPx - paddingPx) / (slotPx - paddingPx)).coerceAtLeast(1f)
 
         // L1/R1 can reach letters outside a very short viewport. Keep that selection visible.
-        LaunchedEffect(current, letters, slotPx, heightPx) {
-            val index = letters.indexOfFirst { it.label == current }
+        LaunchedEffect(current, visible, letters, slotPx, heightPx) {
+            val index = letters.indexOfFirst { if (visible.isNotEmpty()) it.label in visible else it.label == current }
             if (index >= 0 && scrollable) {
                 val top = gapPx + index * pitchPx
                 val bottom = top + slotPx
@@ -127,7 +146,7 @@ fun AlphabetRail(
                 .fillMaxWidth()
                 .focusGroup()
                 .onFocusChanged { railFocused = it.hasFocus }
-                .background(if (railFocused) colors.surface else colors.background)
+                .background(if (railFocused) colors.surface.copy(alpha = 0.6f) else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(6.dp))
                 .pointerInput(letters, slotPx, heightPx) {
                     detectTapGestures { pos -> letterAt(pos.y)?.let { jump(it); release() } }
                 }
@@ -154,41 +173,44 @@ fun AlphabetRail(
         ) {
             letters.forEach { entry ->
                 val enabled = entry.offset != null
-                val isCurrent = enabled && entry.label == current
+                val isActive = enabled && (if (visible.isNotEmpty()) entry.label in visible else entry.label == current)
                 var focused by remember { mutableStateOf(false) }
-                // Same language as a focused card: the letter you are on grows. Colour alone is
-                // easy to miss on a small rail at arm's length.
+                // The pad cursor still grows the letter it is on: colour alone is easy to miss on
+                // a small rail at arm's length. The scroll-spy highlight itself does not move.
                 val pop by animateFloatAsState(
-                    // Dense rails keep the colour/bold highlight without covering neighbours.
-                    targetValue = minOf(if (isCurrent) 1.5f else if (focused) 1.25f else 1f, maxPop),
+                    targetValue = minOf(if (focused) 1.3f else 1f, maxPop),
                     animationSpec = tween(durationMillis = 120),
                     label = "letterPop",
                 )
+                val chip = RoundedCornerShape(4.dp)
                 Box(
                     Modifier
                         .graphicsLayer { scaleX = pop; scaleY = pop }
                         .height(slot)
                         .padding(vertical = 1.dp)
-                        .fillMaxWidth(0.85f)
-                        .clip(PillShape)
+                        .fillMaxWidth(0.86f)
+                        .clip(chip)
                         .onFocusChanged { focused = it.isFocused }
                         .background(
                             when {
-                                isCurrent -> colors.primary
-                                focused -> colors.primaryLighten.copy(alpha = 0.35f)
+                                focused -> colors.primary.copy(alpha = 0.28f)
+                                isActive -> colors.surfaceHover
                                 else -> androidx.compose.ui.graphics.Color.Transparent
                             }
                         )
-                        .alpha(if (enabled) 1f else 0.3f)
                         .then(if (enabled) Modifier.clickable { jump(entry); release() } else Modifier),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         entry.label,
-                        fontSize = 10.sp,
-                        lineHeight = 10.sp,
-                        fontWeight = if (isCurrent || focused) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isCurrent) colors.white else colors.onSurface,
+                        fontSize = 14.sp,
+                        lineHeight = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = when {
+                            isActive || focused -> colors.primaryLighten
+                            enabled -> colors.onSurfaceMuted
+                            else -> colors.onSurfaceFaint.copy(alpha = 0.28f)
+                        },
                         maxLines = 1,
                     )
                 }

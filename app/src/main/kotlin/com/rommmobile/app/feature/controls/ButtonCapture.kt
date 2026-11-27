@@ -1,5 +1,12 @@
 package com.rommmobile.app.feature.controls
 
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.input.pointer.pointerInput
 import android.content.Context
@@ -106,6 +113,9 @@ class CaptureSession(
         private set
     private val assignedHere = LinkedHashSet<LogicalButton>()
     private var downCode: Int? = null
+    /** Uptime (ms) the key now held went down, for the hold gauge; null when nothing is held. */
+    var holdStart by mutableStateOf<Long?>(null)
+        private set
     /** Set by the card: what a two-second hold does (leave, keeping the previous map). */
     var onQuit: (() -> Unit)? = null
 
@@ -120,10 +130,12 @@ class CaptureSession(
             KeyEvent.ACTION_DOWN -> if (event.repeatCount == 0) {
                 if (!acceptable(event)) { feedback = CaptureFeedback.Unusable(code); downCode = null; return }
                 downCode = code
+                holdStart = event.downTime
             }
             KeyEvent.ACTION_UP -> {
                 if (downCode != code) return
                 downCode = null
+                holdStart = null
                 val held = event.eventTime - event.downTime
                 when {
                     held >= QUIT_MS -> onQuit?.invoke()
@@ -194,6 +206,7 @@ class CaptureSession(
 
     private fun advance() {
         downCode = null
+        holdStart = null
         index += 1
         if (index >= order.size) done = true
     }
@@ -236,17 +249,36 @@ fun ButtonCaptureOverlay(
     // alone a completed sequence written to disk behind the user's back. The way out is a
     // two-second hold, the Quit button, or the system's back.
 
+    // The card takes the focus itself: with focus left on the screen underneath, a d-pad press
+    // that reached the UI before the recorder (the very first one, on some pads) moved the
+    // cursor to "Next" instead of being recorded. Anything that still lands here is recorded.
+    val cardFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { repeat(6) { runCatching { cardFocus.requestFocus() }; delay(40) } }
+    val statusTop = androidx.compose.foundation.layout.WindowInsets.statusBars.getTop(androidx.compose.ui.platform.LocalDensity.current)
+    val navBottom = androidx.compose.foundation.layout.WindowInsets.navigationBars.getBottom(androidx.compose.ui.platform.LocalDensity.current)
     Box(
         modifier.fillMaxSize()
             // The scrim owns every touch: the table or wizard underneath must not be reachable
             // while its map is being rewritten, or a tap there would be undone by the result.
             .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } }
-            .background(Color.Black.copy(alpha = 0.72f)),
+            // Dims the system bars' strips too, so the top bar does not stay lighter than the rest.
+            .drawBehind {
+                drawRect(
+                    Color.Black.copy(alpha = 0.72f),
+                    topLeft = androidx.compose.ui.geometry.Offset(0f, -statusTop.toFloat()),
+                    size = androidx.compose.ui.geometry.Size(size.width, size.height + statusTop + navBottom),
+                )
+            }
+            .focusRequester(cardFocus)
+            .onKeyEvent { e -> if (e.nativeKeyEvent.keyCode != android.view.KeyEvent.KEYCODE_BACK) { session.onKey(e.nativeKeyEvent); true } else false }
+            .focusable(),
         contentAlignment = Alignment.Center,
     ) {
         Surface(color = colors.toplayer, shape = MaterialTheme.shapes.extraLarge, tonalElevation = 2.dp) {
             Column(
-                Modifier.widthIn(min = 280.dp, max = 440.dp).padding(horizontal = 24.dp, vertical = 20.dp),
+                // One fixed width: the card no longer grows or shrinks when a feedback line
+                // replaces the hint (the text area below keeps two lines' height too).
+                Modifier.width(440.dp).padding(horizontal = 24.dp, vertical = 20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 val current = session.current
@@ -263,7 +295,9 @@ fun ButtonCaptureOverlay(
                         style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center,
                     )
                     Spacer(Modifier.height(14.dp))
-                    ButtonFace(current, size = 56.dp)
+                    // Hold gauge: a ring fills around the button while it is held. The first mark
+                    // (0.7 s) undoes the last button, the full turn (2 s) quits.
+                    HoldGauge(session) { ButtonFace(current, size = 56.dp) }
                     Spacer(Modifier.height(14.dp))
                 }
                 // The line under the prompt: what the last press did, or how to take it back.
@@ -288,6 +322,7 @@ fun ButtonCaptureOverlay(
                         null -> colors.onSurfaceMuted
                     },
                     textAlign = TextAlign.Center,
+                    minLines = 2,
                 )
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -298,6 +333,48 @@ fun ButtonCaptureOverlay(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun HoldGauge(session: CaptureSession, content: @Composable () -> Unit) {
+    val colors = RommTheme.colors
+    val start = session.holdStart
+    var elapsed by remember { mutableStateOf(0L) }
+    LaunchedEffect(start) {
+        elapsed = 0L
+        if (start == null) return@LaunchedEffect
+        while (true) {
+            androidx.compose.runtime.withFrameMillis { }
+            elapsed = android.os.SystemClock.uptimeMillis() - start
+        }
+    }
+    val undoFrac = CaptureSession.HOLD_MS.toFloat() / CaptureSession.QUIT_MS
+    val frac = if (start == null) 0f else (elapsed.toFloat() / CaptureSession.QUIT_MS).coerceIn(0f, 1f)
+    val canUndo = session.index > 0
+    Box(Modifier.size(84.dp), contentAlignment = Alignment.Center) {
+        androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+            val stroke = 5.dp.toPx()
+            val inset = stroke / 2f
+            val arcSize = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke)
+            val tl = androidx.compose.ui.geometry.Offset(inset, inset)
+            drawArc(colors.onSurface.copy(alpha = 0.12f), -90f, 360f, false, tl, arcSize, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+            if (frac > 0f) {
+                // Accent up to the undo mark, red past it towards quit.
+                val color = if (canUndo && frac < undoFrac) colors.accent else if (frac >= undoFrac) colors.red else colors.accent
+                drawArc(color, -90f, 360f * frac, false, tl, arcSize, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+            }
+            if (canUndo) {
+                // Tick at the undo threshold.
+                val a = Math.toRadians((-90.0 + 360.0 * undoFrac))
+                val r1 = size.width / 2f - stroke * 1.6f
+                val r2 = size.width / 2f + stroke * 0.2f
+                val c = center
+                drawLine(colors.onSurfaceMuted, c + androidx.compose.ui.geometry.Offset((r1 * Math.cos(a)).toFloat(), (r1 * Math.sin(a)).toFloat()),
+                    c + androidx.compose.ui.geometry.Offset((r2 * Math.cos(a)).toFloat(), (r2 * Math.sin(a)).toFloat()), 2.dp.toPx())
+            }
+        }
+        content()
     }
 }
 
@@ -328,8 +405,8 @@ fun ButtonFace(button: LogicalButton, size: Dp, modifier: Modifier = Modifier) {
 fun MappingRow(button: LogicalButton, map: ButtonMap, modifier: Modifier = Modifier) {
     val colors = RommTheme.colors
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        Text(button.label(), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.width(96.dp))
-        Spacer(Modifier.width(8.dp))
+        Text(button.label(), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.width(140.dp))
+        Spacer(Modifier.width(16.dp))
         val code = map.codeFor(button)
         Text(
             if (code != null) ButtonMap.describe(code) else stringResource(R.string.controls_not_assigned),

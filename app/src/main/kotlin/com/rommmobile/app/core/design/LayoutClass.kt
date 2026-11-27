@@ -1,5 +1,8 @@
 package com.rommmobile.app.core.design
 
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.ui.layout.layout
 import android.app.UiModeManager
 import android.content.Context
 import android.content.pm.PackageManager
@@ -56,20 +59,35 @@ data class LayoutClass(
     val isShort: Boolean get() = heightClass == HeightClass.SHORT
     val isCompact: Boolean get() = widthClass == WidthClass.COMPACT
 
+    // Square screens (a dual-screen handheld's 1240x1080 bottom panel, an RG Cube) get the bar at
+    // the bottom like a phone: a rail there eats a fifth of an already narrow width. Only wide
+    // landscape screens keep the rail on the D-pad side.
+    // The floating bottom pill everywhere, as in the v2 web app on phones and on the owner's
+    // dual-screen handheld (both its 16:9 top and square bottom panels). Only TVs keep a rail:
+    // a remote has no thumb near the bottom of the screen.
+    // Rail on the left for wide landscape screens (a 16:9 handheld: the D-pad thumb is there),
+    // the floating bottom pill everywhere else (phones, the square bottom panel of a dual-screen
+    // handheld).
     val navMode: NavMode = when {
         isTv -> NavMode.RAIL_TV
-        heightClass == HeightClass.SHORT -> NavMode.RAIL_COMPACT
-        widthClass == WidthClass.COMPACT -> NavMode.BOTTOM_BAR
-        else -> NavMode.RAIL
+        shape == ScreenShape.LANDSCAPE && heightClass == HeightClass.SHORT -> NavMode.RAIL_COMPACT
+        shape == ScreenShape.LANDSCAPE -> NavMode.RAIL
+        else -> NavMode.BOTTOM_BAR
     }
-    val bottomBarHeight: Dp = 72.dp
+    val bottomBarHeight: Dp = if (isShort) 62.dp else 72.dp
     val topBarHeight: Dp = when {
         isTv -> 48.dp
-        isShort -> 40.dp
+        isShort -> 36.dp
         else -> 56.dp
     }
     val padding: Dp = if (isShort) 8.dp else 12.dp
-    val gap: Dp = if (isShort) 6.dp else 8.dp
+    /**
+     * The one horizontal page margin: grids, titles, the back arrow's glyph, search field, hint
+     * bar and the game page all start this far from the edge (or from the side panel).
+     */
+    val margin: Dp = if (isShort) 20.dp else 24.dp
+    /** v2 gallery gap is 12 px; a short handheld screen gets a little less. */
+    val gap: Dp = if (isShort) 8.dp else 12.dp
 
     /** Minimum cell for cover grids; the AlphabetRail width is subtracted by the caller. */
     val coverMinCell: Dp = run {
@@ -83,12 +101,57 @@ data class LayoutClass(
     }
     val platformMinCell: Dp = coverMinCell + 16.dp
     val twoPane: Boolean = widthClass == WidthClass.EXPANDED && shape == ScreenShape.LANDSCAPE
-    val alphabetRailWidth: Dp = if (widthDp >= 600) 32.dp else 28.dp
-    val focusScale: Float = if (isTv) 1.10f else 1.07f
+    /** Letter strip width, plus the grid gap kept free on its right and above it. */
+    val alphabetRailWidth: Dp = if (widthDp >= 600) 38.dp else 34.dp
+    /** Focus is shown by colour, not size (owner's call); a TV, read from the sofa, still grows. */
+    val focusScale: Float = if (isTv) 1.10f else 1f
     val overscanInset: Dp = if (isTv) (minOf(widthDp, heightDp) * 0.05f).dp else 0.dp
     val miniBarHeight: Dp = 44.dp
     val listRowHeight: Dp = 56.dp
     val maxColumns: Int = 8
+}
+
+/**
+ * Height of the floating navigation drawn OVER the bottom of the content (phones, square
+ * screens). Scrollable lists add it to their bottom padding so the last row can be scrolled clear
+ * of the bar, while everything above still passes behind its gradient. Zero with a side rail.
+ */
+val LocalBottomOverlay = staticCompositionLocalOf { 0.dp }
+
+/** Bottom padding a scrolling list needs under the floating bar, pad hints included. */
+val bottomOverlayPadding: Dp
+    @androidx.compose.runtime.Composable @androidx.compose.runtime.ReadOnlyComposable
+    // The pad hint bar now floats over the bottom of every list, so the last row always needs
+    // room for it, plus the floating nav bar when there is one.
+    get() = LocalBottomOverlay.current + 52.dp
+
+/** Height of the system navigation bar the current screen draws under (see [ExtendUnderNavBar]). */
+val LocalNavBarInset = staticCompositionLocalOf { 0.dp }
+
+/**
+ * Lets a scrolling screen run under the system navigation bar (gesture handle or 3 buttons),
+ * like the web app's content under the browser chrome: the screen is measured that much taller
+ * and the inset is published, so grids pad their last row and the floating bars sit above it.
+ */
+@Composable
+fun ExtendUnderNavBar(content: @Composable () -> Unit) {
+    val density = LocalDensity.current
+    // With the keyboard up the navigation bar is under it: nothing to extend into.
+    val imeUp = androidx.compose.foundation.layout.WindowInsets.ime.getBottom(density) > 0
+    val insetPx = if (imeUp) 0 else androidx.compose.foundation.layout.WindowInsets.navigationBars.getBottom(density)
+    val inset = with(density) { insetPx.toDp() }
+    androidx.compose.foundation.layout.Box(
+        androidx.compose.ui.Modifier.layout { m, c ->
+            val h = if (c.hasBoundedHeight) c.maxHeight + insetPx else c.maxHeight
+            val p = m.measure(c.copy(minHeight = h, maxHeight = h))
+            layout(c.maxWidth, c.maxHeight) { p.place(0, 0) }
+        },
+    ) {
+        androidx.compose.runtime.CompositionLocalProvider(
+            LocalNavBarInset provides inset,
+            LocalBottomOverlay provides inset,
+        ) { content() }
+    }
 }
 
 val LocalLayoutClass = staticCompositionLocalOf { LayoutClass(393, 873, isTv = false, fontScale = 1f) }

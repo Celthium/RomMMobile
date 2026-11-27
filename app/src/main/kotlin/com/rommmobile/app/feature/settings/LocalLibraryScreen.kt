@@ -103,7 +103,7 @@ fun LocalLibraryScreen(onBack: () -> Unit) {
         }
         if (selected == null) {
             if (summary.isEmpty()) EmptyState(Icons.Rounded.FolderOpen, stringResource(R.string.local_empty), subtitle = stringResource(R.string.local_empty_hint))
-            else LazyColumn(state = listState, modifier = Modifier.fillMaxSize().rightStickScroll(listState), contentPadding = PaddingValues(4.dp)) {
+            else LazyColumn(state = listState, modifier = Modifier.fillMaxSize().rightStickScroll(listState), contentPadding = PaddingValues(vertical = 4.dp)) {
                 items(summary, key = { it.first.platformSlug }) { (row, name) ->
                     SettingRow(title = name, subtitle = pluralStringResource(R.plurals.n_files, row.count, row.count) + " · " + Format.bytes(row.bytes), onClick = { vm.select(row.platformSlug) }) {
                         Icon(Icons.Rounded.Folder, null, tint = colors.primaryLighten)
@@ -111,7 +111,7 @@ fun LocalLibraryScreen(onBack: () -> Unit) {
                 }
             }
         } else {
-            LazyColumn(state = listState, modifier = Modifier.fillMaxSize().rightStickScroll(listState), contentPadding = PaddingValues(4.dp)) {
+            LazyColumn(state = listState, modifier = Modifier.fillMaxSize().rightStickScroll(listState), contentPadding = PaddingValues(vertical = 4.dp)) {
                 items(files, key = { it.fileName }) { f ->
                     SettingRow(
                         title = f.fileName,

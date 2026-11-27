@@ -1,5 +1,10 @@
 package com.rommmobile.app.feature.platforms
 
+import com.rommmobile.app.core.design.cascadeIn
+import androidx.compose.ui.graphics.compositeOver
+import com.rommmobile.app.core.design.LocalBottomOverlay
+import androidx.compose.foundation.border
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -44,6 +49,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -65,6 +71,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.rommmobile.app.R
+import com.rommmobile.app.core.design.bottomOverlayPadding
 import com.rommmobile.app.core.design.EmptyState
 import com.rommmobile.app.core.design.ErrorState
 import com.rommmobile.app.core.design.OfflineBanner
@@ -203,8 +210,11 @@ fun PlatformGrid(platforms: List<Platform>, base: String?, onOpen: (Platform) ->
     // first console every time, which throws away a long scroll.
     var lastFocused by rememberSaveable { mutableIntStateOf(0) }
     val letters = remember(platforms) { lettersOf(platforms) }
+    // Dual screen: the other screen shows the platform under the cursor.
+    val dual = com.rommmobile.app.feature.dualscreen.LocalDualScreen.current
+    androidx.compose.runtime.DisposableEffect(dual) { onDispose { dual?.clearPlatform() } }
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val railWidth = if (letters.any { it.offset != null }) layout.alphabetRailWidth else 0.dp
+        val railWidth = if (letters.any { it.offset != null }) layout.alphabetRailWidth + layout.gap else 0.dp
         val columns = ((maxWidth - railWidth) / layout.platformMinCell).toInt().coerceIn(2, layout.maxColumns)
         LaunchedEffect(columns, platforms.size) {
             gridFocus.columns = columns
@@ -234,6 +244,13 @@ fun PlatformGrid(platforms: List<Platform>, base: String?, onOpen: (Platform) ->
                 else first + columns / 2
             }
         }
+        val visibleRange by remember {
+            derivedStateOf {
+                val idx = state.layoutInfo.visibleItemsInfo.map { it.index }
+                (idx.minOrNull() ?: 0) to (idx.maxOrNull() ?: -1)
+            }
+        }
+        val visibleSet = remember(letters, visibleRange) { com.rommmobile.app.feature.library.visibleLetters(letters, visibleRange.first, visibleRange.second) }
         val current = remember(letters, anchor) {
             letters.filter { it.offset != null && it.offset <= anchor }.maxByOrNull { it.offset!! }?.label
         }
@@ -261,67 +278,89 @@ fun PlatformGrid(platforms: List<Platform>, base: String?, onOpen: (Platform) ->
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(columns),
                         state = state,
-                        contentPadding = PaddingValues(layout.padding),
+                        contentPadding = PaddingValues(start = layout.margin, top = layout.padding, end = layout.margin, bottom = layout.padding + bottomOverlayPadding),
                         horizontalArrangement = Arrangement.spacedBy(layout.gap),
                         verticalArrangement = Arrangement.spacedBy(layout.gap),
                         modifier = Modifier.fillMaxSize().focusGroup().gridDpadNavigation(gridFocus).rightStickScroll(state),
                     ) {
                         itemsIndexed(platforms, key = { _, it -> it.id }) { index, p ->
-                            PlatformCard(p, base, onClick = { onOpen(p) }, modifier = Modifier.gridFocusItem(index, gridFocus))
+                            PlatformCard(p, base, onClick = { onOpen(p) }, modifier = Modifier.gridFocusItem(index, gridFocus).cascadeIn(index, p.id), onFocused = { dual?.showPlatform(p, base) })
                         }
                     }
                 }
             }
             if (railWidth > 0.dp) {
-                AlphabetRail(letters = letters, current = current, onJump = ::jump)
+                AlphabetRail(letters = letters, current = current, onJump = ::jump, modifier = Modifier.padding(bottom = LocalBottomOverlay.current), visible = visibleSet)
             }
         }
     }
 }
 
+/**
+ * Icon + gap + two lines of name + the count line + padding. Smaller on a short screen (a 16:9
+ * handheld in landscape is about 430 dp high): two full rows must fit, not one and a half.
+ */
+private fun tileHeight(short: Boolean) = if (short) 140.dp else 176.dp
+private fun tileIcon(short: Boolean) = if (short) 52.dp else 72.dp
+
+/**
+ * v2 platform tile (`v2/components/shared/Tile.vue`): elevated card with a hairline border and a
+ * 14 dp radius, the console icon large in the middle, the name in semibold and the game count
+ * underneath in muted text. No coloured count pill any more: the web dropped it.
+ */
 @Composable
-fun PlatformCard(platform: Platform, base: String?, onClick: () -> Unit, modifier: Modifier = Modifier, compact: Boolean = false) {
+fun PlatformCard(platform: Platform, base: String?, onClick: () -> Unit, modifier: Modifier = Modifier, compact: Boolean = false, onFocused: () -> Unit = {}) {
     val colors = RommTheme.colors
     val shape = MaterialTheme.shapes.large
+    val short = RommTheme.layout.isShort
+    var focused by remember { mutableStateOf(false) }
     Column(
         modifier
-            .gamepadFocus(shape)
+            .gamepadFocus(shape, onFocused = { focused = it; if (it) onFocused() })
             .clip(shape)
-            .background(colors.surface)
+            // Focus: the violet edge does the work; the fill only takes a hint of it.
+            .background(if (focused) colors.primary.copy(alpha = 0.10f).compositeOver(colors.elevated) else colors.elevated)
+            .border(if (focused) 2.dp else 1.dp, if (focused) colors.primary else colors.border, shape)
             .clickable(onClick = onClick)
-            // Taller than wide: a square cell cannot hold a big logo plus a two-line name plus
-            // the size line, and the last one was getting clipped.
-            .then(if (compact) Modifier.padding(6.dp) else Modifier.heightIn(min = 190.dp).padding(8.dp)),
+            .then(
+                if (compact) Modifier.padding(horizontal = 8.dp, vertical = 10.dp)
+                // One height for every tile, sized for a two-line name ("Nintendo Entertainment
+                // System"): rows of tiles that each grow to their own text looked uneven.
+                else Modifier.height(tileHeight(short)).padding(start = 10.dp, end = 10.dp, top = if (short) 10.dp else 16.dp, bottom = if (short) 8.dp else 12.dp),
+            ),
         horizontalAlignment = Alignment.CenterHorizontally,
+        // Icon, name and count each on a fixed line: the name always reserves two lines, so the
+        // stack has the same height on every tile and centring it moves nothing. A two-line name
+        // ("Nintendo Entertainment System") no longer pushes its icon and title up.
         verticalArrangement = Arrangement.Center,
     ) {
-        Box(Modifier.fillMaxWidth()) {
-            StatusPill(platform.romCount.toString(), colors.primaryDarken, modifier = Modifier.align(Alignment.TopEnd))
+        val icons = remember(platform.slug, platform.fsSlug, base) { platform.iconUrls(base) }
+        PlatformIcon(icons, size = if (compact) 52.dp else tileIcon(short))
+        Spacer(Modifier.height(if (compact || short) 8.dp else 14.dp))
+        val nameStyle = MaterialTheme.typography.titleSmall
+        // Room for two lines whatever the name: the first line and the count line never move.
+        val twoLines = with(androidx.compose.ui.platform.LocalDensity.current) { (nameStyle.lineHeight * 2).toDp() }
+        // The name is centred in its two-line slot: a one-line name sits in the middle, close to
+        // the count under it, and a two-line one fills the slot. Icon slot, name slot and count
+        // still stay at the same place on every tile.
+        Box(Modifier.fillMaxWidth().then(if (compact) Modifier else Modifier.height(twoLines)), contentAlignment = Alignment.Center) {
+            Text(
+                platform.name,
+                style = nameStyle,
+                color = colors.onSurface,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
-        Spacer(Modifier.weight(1f))
-        PlatformIcon(platform.iconUrl(base), size = if (compact) 48.dp else 76.dp)
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(2.dp))
         Text(
-            platform.name,
-            // Medium weight with a soft shadow: plain body text on a flat card reads as
-            // placeholder, and console names are what the eye scans for on this screen.
-            style = MaterialTheme.typography.titleSmall.copy(
-                // A black halo lifts white text off a dark card, but smudges dark text on a
-                // light one, so the drop shadow follows the theme instead of being fixed.
-                shadow = Shadow(
-                    if (colors.isDark) Color(0x99000000) else Color(0x33000000),
-                    Offset(0f, 1f),
-                    if (colors.isDark) 3f else 1.5f,
-                ),
-            ),
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth(),
+            pluralStringResource(R.plurals.games_count, platform.romCount, platform.romCount),
+            style = MaterialTheme.typography.labelMedium,
+            color = colors.onSurfaceMuted,
+            maxLines = 1,
         )
-        if (!compact && platform.sizeBytes > 0) {
-            Text(Format.bytes(platform.sizeBytes), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceMuted)
-        }
     }
 }
 
@@ -337,7 +376,7 @@ private fun PlatformsSkeleton() {
             verticalArrangement = Arrangement.spacedBy(layout.gap),
             userScrollEnabled = false,
         ) {
-            items(12) { Skeleton(Modifier.aspectRatio(1f), shape = MaterialTheme.shapes.large) }
+            items(12) { Skeleton(Modifier.fillMaxWidth().height(tileHeight(layout.isShort)), shape = MaterialTheme.shapes.large) }
         }
     }
 }
@@ -352,8 +391,8 @@ private fun TwoPane(platforms: List<Platform>, base: String?, onOpenGame: (Int) 
     Row(Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.width(280.dp).fillMaxHeight().background(colors.surface).focusRestorer().rightStickScroll(listState),
-            contentPadding = PaddingValues(8.dp),
+            modifier = Modifier.width(280.dp).fillMaxHeight().background(colors.elevated).focusRestorer().rightStickScroll(listState),
+            contentPadding = PaddingValues(start = 8.dp, top = 8.dp, end = 8.dp, bottom = 8.dp + LocalBottomOverlay.current),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             items(platforms, key = { it.id }) { p ->
@@ -363,16 +402,16 @@ private fun TwoPane(platforms: List<Platform>, base: String?, onOpenGame: (Int) 
                         .fillMaxWidth()
                         .gamepadFocusRing(MaterialTheme.shapes.medium)
                         .clip(MaterialTheme.shapes.medium)
-                        .background(if (isSel) colors.primary.copy(alpha = 0.2f) else colors.surface)
+                        .background(if (isSel) colors.surfaceHover else Color.Transparent)
                         .clickable { selectedId = p.id }
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    PlatformIcon(p.iconUrl(base), size = 28.dp)
+                    PlatformIcon(p.iconUrls(base), size = 28.dp)
                     Spacer(Modifier.width(10.dp))
                     Text(p.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     Spacer(Modifier.width(6.dp))
-                    StatusPill(p.romCount.toString(), colors.primaryDarken)
+                    Text(p.romCount.toString(), style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceMuted)
                 }
             }
         }

@@ -49,7 +49,7 @@
     <string name="error_not_found">The server answered 404 on %s. Check the RomM version: this app targets RomM 5.x.</string>
     <string name="error_non_json">The server answered with a web page instead of data. A reverse proxy or a login page is probably in the way.</string>
     <string name="error_timeout">The server is taking too long to answer. Check Wi-Fi and that RomM is running.</string>
-    <string name="error_offline">Cannot reach the server. Check the connection and the address.</string>
+    <string name="error_offline">Cannot reach the server. Check the connection and the address. Using a VPN? Make sure it is connected on this device.</string>
     <string name="error_tls">Secure connection failed. The certificate is not trusted by this device.</string>
     <string name="error_cleartext_blocked">Plain HTTP towards the internet is blocked. Use HTTPS or allow it in Settings → Advanced.</string>
     <string name="error_server">Server error %1$d. %2$s</string>
@@ -126,7 +126,7 @@
     <!-- downloads -->
     <string name="dl_subtitle">%1$d active · %2$d waiting</string>
     <string name="dl_empty">No downloads</string>
-    <string name="dl_empty_hint">Press X on a game, or open it and choose Download.</string>
+    <string name="dl_empty_hint">Press {X} on a game, or open it and choose Download.</string>
     <string name="dl_section_active">Active</string>
     <string name="dl_section_waiting">Waiting</string>
     <string name="dl_section_failed">Failed</string>
@@ -358,4 +358,59 @@
     <string name="bulk_delete_body">The files are removed from this device. They stay on RomM and you can download them again whenever you want.</string>
     <string name="bulk_delete_done">%d removed from the device</string>
     <string name="select_none">Select at least one game</string>
+    <!-- Game page, v2 layout -->
+    <string name="tab_overview">Overview</string>
+    <string name="tab_media">Media</string>
+    <string name="tab_files">Files</string>
+    <string name="detail_genres">Genres</string>
+    <string name="detail_companies">Companies</string>
+    <string name="detail_release">Release date</string>
+    <string name="detail_file">File</string>
+    <string name="detail_no_summary">No description for this game yet.</string>
+    <string name="detail_no_media">No screenshots for this game.</string>
+    <string name="detail_screenshot">Screenshot %1$d of %2$d</string>
+    <string name="detail_missing">Missing on server</string>
+    <plurals name="games_count">
+        <item quantity="one">%d game</item>
+        <item quantity="other">%d games</item>
+    </plurals>
+    <!-- RomM file categories -->
+    <string name="cat_game">Game</string>
+    <string name="cat_dlc">DLC</string>
+    <string name="cat_update">Update</string>
+    <string name="cat_mod">Mod</string>
+    <string name="cat_patch">Patch</string>
+    <string name="cat_hack">Hack</string>
+    <string name="cat_translation">Translation</string>
+    <string name="cat_demo">Demo</string>
+    <string name="cat_prototype">Prototype</string>
+    <string name="cat_manual">Manual</string>
+    <string name="cat_cheat">Cheats</string>
+    <string name="action_download_file">Download %s</string>
+    <string name="toast_file_present">%s is already on the device</string>
+    <string name="settings_dual_screen">Second screen</string>
+    <string name="settings_dual_screen_hint">On dual-screen handhelds, the other screen shows the selected game: screenshots, cover and description</string>
+    <string name="dual_idle">Select a game to see it here</string>
+    <string name="dual_bios_count">BIOS: %d</string>
+    <string name="hint_tabs">Tabs</string>
+    <plurals name="dual_players">
+        <item quantity="one">%s player</item>
+        <item quantity="other">%s players</item>
+    </plurals>
+    <string name="dual_setup">Setting up</string>
+    <string name="dual_setup_hint">Follow the steps on the main screen</string>
+    <string name="controls_detected">Controller detected: %s</string>
+    <string name="controls_auto">Buttons configured automatically. Customise them if one does not match.</string>
+    <string name="controls_customize">Customise the buttons</string>
+    <string name="face_layout_title">Button layout</string>
+    <string name="face_layout_hint">Where the button marked A sits on your pad: on-screen hints light that corner.</string>
+    <string name="face_layout_xbox">A at the bottom (Xbox)</string>
+    <string name="face_layout_nintendo">A on the right (Nintendo)</string>
+    <string name="settings_swap_screens">Swap screens</string>
+    <string name="settings_swap_screens_hint">Moves the app to the other screen and the game sheet to this one</string>
+    <string name="settings_preview_block">Info block</string>
+    <string name="settings_preview_block_hint">Shown over the picture on the other screen</string>
+    <string name="settings_preview_title">Logo or title</string>
+    <string name="settings_preview_tags">Tags (platform, year, rating…)</string>
+    <string name="settings_preview_summary">Summary</string>
 </resources>

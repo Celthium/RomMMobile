@@ -1,5 +1,21 @@
 package com.rommmobile.app.feature.settings
 
+import com.rommmobile.app.core.design.PillShape
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Monitor
+import androidx.compose.material.icons.rounded.SportsEsports
+import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material3.Icon
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import com.rommmobile.app.core.design.RommTextField
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,7 +28,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -94,6 +109,8 @@ class SettingsViewModel @Inject constructor(
     fun setRoot(root: StorageRoot) = viewModelScope.launch { store.setStorageRoot(root); mapping.resetAutomatic(); localLibrary.rescanAll() }
     fun setConcurrency(n: Int) = viewModelScope.launch { store.setConcurrency(n) }
     fun setWifiOnly(v: Boolean) = viewModelScope.launch { store.setWifiOnly(v) }
+    fun setDualScreen(v: Boolean) = viewModelScope.launch { store.setDualScreen(v) }
+    fun setPreview(v: com.rommmobile.app.data.prefs.PreviewOptions) = viewModelScope.launch { store.setPreview(v) }
     fun setExtractZip(v: Boolean) = viewModelScope.launch { store.setAutoExtractZip(v) }
     fun setExtract7z(v: Boolean) = viewModelScope.launch { store.setAutoExtract7z(v) }
     fun setMargin(v: Int) = viewModelScope.launch { store.setScreenMargin(v) }
@@ -133,50 +150,137 @@ fun SettingsScreen(
 
     var dialog by remember { mutableStateOf<String?>(null) }
 
+    // Categories instead of one long list: on a landscape handheld a sidebar on the left (like a
+    // console's settings), on a portrait phone a row of tabs on top. LB / RB step through them
+    // either way, and a category opens as soon as the cursor lands on it.
+    var category by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(SettingsCategory.SERVER) }
+    val categories = SettingsCategory.entries
+    com.rommmobile.app.core.input.GamepadActions(category) { action ->
+        val i = categories.indexOf(category)
+        when (action) {
+            com.rommmobile.app.core.input.GamepadAction.PREV_LETTER -> { if (i > 0) category = categories[i - 1]; true }
+            com.rommmobile.app.core.input.GamepadAction.NEXT_LETTER -> { if (i < categories.lastIndex) category = categories[i + 1]; true }
+            else -> false
+        }
+    }
+    val wide = layout.navMode != com.rommmobile.app.core.design.NavMode.BOTTOM_BAR
+    val otherScreen = remember { hasSecondScreen(context) }
+
+    val content: @Composable () -> Unit = {
+        Column(Modifier.fillMaxSize().verticalScroll(scroll).rightStickScroll(scroll).padding(start = if (wide) 0.dp else layout.margin, end = layout.margin, top = 8.dp, bottom = 24.dp + com.rommmobile.app.core.design.LocalNavBarInset.current)) {
+            when (category) {
+                SettingsCategory.SERVER -> {
+                    SettingsCard {
+                        SettingRow(stringResource(R.string.settings_server_lan), subtitle = listOfNotNull(server.baseUrl, server.serverVersion?.let { "RomM $it" }).joinToString(" · "), onClick = { dialog = "server" })
+                        SettingRow(stringResource(R.string.settings_server_remote), subtitle = server.remoteUrl ?: stringResource(R.string.settings_not_set), onClick = { dialog = "remote" })
+                        SettingRow(stringResource(R.string.settings_cf_access), subtitle = if (server.cfClientId.isNullOrBlank()) stringResource(R.string.settings_not_set) else server.cfClientId, onClick = { dialog = "cf" })
+                        SwitchRow(stringResource(R.string.settings_allow_insecure), s.allowInsecureRemote, vm::setAllowInsecure, subtitle = stringResource(R.string.settings_allow_insecure_hint))
+                    }
+                    SettingsCard {
+                        val user = (session as? Session.LoggedIn)
+                        SettingRow(stringResource(R.string.settings_account), subtitle = user?.let { "${it.username ?: "?"} · ${it.mode.name.lowercase()}" } ?: stringResource(R.string.settings_logged_out), onClick = { dialog = "logout" })
+                    }
+                }
+                SettingsCategory.STORAGE -> {
+                    SettingsCard {
+                        SettingRow(stringResource(R.string.settings_launcher), subtitle = launcherLabel(s.launcher), onClick = { dialog = "launcher" })
+                        SettingRow(stringResource(R.string.settings_root), subtitle = s.storageRoot?.displayName ?: stringResource(R.string.settings_not_set), onClick = { dialog = "root" })
+                        SettingRow(stringResource(R.string.settings_mappings), subtitle = stringResource(R.string.settings_mappings_hint), onClick = onOpenMappings)
+                    }
+                    SettingsCard {
+                        SettingRow(stringResource(R.string.settings_local_library), subtitle = stringResource(R.string.settings_local_library_hint), onClick = onOpenLocalLibrary)
+                        SettingRow(stringResource(R.string.settings_rescan), subtitle = stringResource(R.string.settings_rescan_hint), onClick = { vm.rescan() })
+                    }
+                    SettingsCard {
+                        SettingRow(stringResource(R.string.settings_bios), subtitle = s.biosPath ?: stringResource(R.string.settings_bios_default), onClick = onOpenFirmware)
+                        SettingRow(stringResource(R.string.settings_bios_path), subtitle = s.biosPath ?: stringResource(R.string.settings_bios_default), onClick = { dialog = "bios" })
+                    }
+                }
+                SettingsCategory.DOWNLOADS -> {
+                    SettingsCard {
+                        SettingRow(stringResource(R.string.settings_concurrency), subtitle = s.concurrency.toString(), onClick = { dialog = "concurrency" })
+                        SwitchRow(stringResource(R.string.settings_wifi_only), s.wifiOnly, vm::setWifiOnly)
+                    }
+                    SettingsCard {
+                        SwitchRow(stringResource(R.string.settings_extract_zip), s.autoExtractZip, vm::setExtractZip, subtitle = stringResource(R.string.settings_extract_zip_hint))
+                        SwitchRow(stringResource(R.string.settings_extract_7z), s.autoExtract7z, vm::setExtract7z, subtitle = stringResource(R.string.settings_extract_7z_hint))
+                        SettingRow(stringResource(R.string.settings_per_platform), subtitle = stringResource(R.string.settings_per_platform_hint), onClick = { dialog = "perplatform" })
+                    }
+                }
+                SettingsCategory.CONTROLS -> {
+                    SettingsCard {
+                        SettingRow(stringResource(R.string.settings_button_map), subtitle = stringResource(if (s.buttonMap.isDefault) R.string.settings_button_map_default else R.string.settings_button_map_custom), onClick = onOpenControls)
+                    }
+                }
+                SettingsCategory.DISPLAY -> {
+                    SettingsCard {
+                        SettingRow(stringResource(R.string.settings_theme), subtitle = themeLabel(s.themeMode), onClick = { dialog = "theme" })
+                    }
+                    SettingsCard {
+                        SwitchRow(stringResource(R.string.settings_dual_screen), s.dualScreen, vm::setDualScreen, subtitle = stringResource(R.string.settings_dual_screen_hint))
+                        // Only once the second screen is on and there is one to swap with.
+                        if (s.dualScreen && otherScreen) {
+                            SettingRow(
+                                stringResource(R.string.settings_swap_screens),
+                                subtitle = stringResource(R.string.settings_swap_screens_hint),
+                                onClick = { (context.findActivity() as? com.rommmobile.app.MainActivity)?.moveToOtherScreen() },
+                            )
+                        }
+                    }
+                    // The info block over the picture on the other screen: on / off, then part by
+                    // part (the parts only matter, and only respond, while the block is on).
+                    if (s.dualScreen) {
+                        val pv = s.preview
+                        SettingsCard {
+                            SwitchRow(stringResource(R.string.settings_preview_block), pv.block, { vm.setPreview(pv.copy(block = it)) }, subtitle = stringResource(R.string.settings_preview_block_hint))
+                            SwitchRow(stringResource(R.string.settings_preview_title), pv.title, { vm.setPreview(pv.copy(title = it)) }, enabled = pv.block)
+                            SwitchRow(stringResource(R.string.settings_preview_tags), pv.tags, { vm.setPreview(pv.copy(tags = it)) }, enabled = pv.block)
+                            SwitchRow(stringResource(R.string.settings_preview_summary), pv.summary, { vm.setPreview(pv.copy(summary = it)) }, enabled = pv.block)
+                        }
+                    }
+                }
+                SettingsCategory.ADVANCED -> {
+                    SettingsCard {
+                        SettingRow(stringResource(R.string.settings_diagnostics), subtitle = stringResource(R.string.settings_diagnostics_hint), onClick = onOpenDiagnostics)
+                        SettingRow(stringResource(R.string.settings_rerun_onboarding), onClick = { dialog = "rerun" })
+                    }
+                    SettingsCard {
+                        SettingRow(stringResource(R.string.settings_version), subtitle = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+                    }
+                }
+            }
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
         RommTopBar(title = stringResource(R.string.section_settings), onBack = onBack)
-        Column(Modifier.fillMaxSize().verticalScroll(scroll).rightStickScroll(scroll).padding(horizontal = layout.padding / 2, vertical = 4.dp)) {
-
-            SectionHeader(stringResource(R.string.settings_server))
-            SettingRow(stringResource(R.string.settings_server_lan), subtitle = listOfNotNull(server.baseUrl, server.serverVersion?.let { "RomM $it" }).joinToString(" · "), onClick = { dialog = "server" })
-            SettingRow(stringResource(R.string.settings_server_remote), subtitle = server.remoteUrl ?: stringResource(R.string.settings_not_set), onClick = { dialog = "remote" })
-            SettingRow(stringResource(R.string.settings_cf_access), subtitle = if (server.cfClientId.isNullOrBlank()) stringResource(R.string.settings_not_set) else server.cfClientId, onClick = { dialog = "cf" })
-            val user = (session as? Session.LoggedIn)
-            SettingRow(stringResource(R.string.settings_account), subtitle = user?.let { "${it.username ?: "?"} · ${it.mode.name.lowercase()}" } ?: stringResource(R.string.settings_logged_out), onClick = { dialog = "logout" })
-            SwitchRow(stringResource(R.string.settings_allow_insecure), s.allowInsecureRemote, vm::setAllowInsecure, subtitle = stringResource(R.string.settings_allow_insecure_hint))
-
-            SectionHeader(stringResource(R.string.settings_launcher_folders))
-            SettingRow(stringResource(R.string.settings_launcher), subtitle = launcherLabel(s.launcher), onClick = { dialog = "launcher" })
-            SettingRow(stringResource(R.string.settings_root), subtitle = s.storageRoot?.displayName ?: stringResource(R.string.settings_not_set), onClick = { dialog = "root" })
-            SettingRow(stringResource(R.string.settings_mappings), subtitle = stringResource(R.string.settings_mappings_hint), onClick = onOpenMappings)
-            SettingRow(stringResource(R.string.settings_local_library), subtitle = stringResource(R.string.settings_local_library_hint), onClick = onOpenLocalLibrary)
-            SettingRow(stringResource(R.string.settings_rescan), subtitle = stringResource(R.string.settings_rescan_hint), onClick = { vm.rescan() })
-            SettingRow(stringResource(R.string.settings_bios), subtitle = s.biosPath ?: stringResource(R.string.settings_bios_default), onClick = onOpenFirmware)
-            SettingRow(stringResource(R.string.settings_bios_path), subtitle = s.biosPath ?: stringResource(R.string.settings_bios_default), onClick = { dialog = "bios" })
-
-            SectionHeader(stringResource(R.string.settings_downloads))
-            SettingRow(stringResource(R.string.settings_concurrency), subtitle = s.concurrency.toString(), onClick = { dialog = "concurrency" })
-            SwitchRow(stringResource(R.string.settings_wifi_only), s.wifiOnly, vm::setWifiOnly)
-            SwitchRow(stringResource(R.string.settings_extract_zip), s.autoExtractZip, vm::setExtractZip, subtitle = stringResource(R.string.settings_extract_zip_hint))
-            SwitchRow(stringResource(R.string.settings_extract_7z), s.autoExtract7z, vm::setExtract7z, subtitle = stringResource(R.string.settings_extract_7z_hint))
-            SettingRow(
-                stringResource(R.string.settings_per_platform),
-                subtitle = stringResource(R.string.settings_per_platform_hint),
-                onClick = { dialog = "perplatform" },
-            )
-
-            SectionHeader(stringResource(R.string.settings_controls))
-            SettingRow(stringResource(R.string.settings_button_map), subtitle = stringResource(if (s.buttonMap.isDefault) R.string.settings_button_map_default else R.string.settings_button_map_custom), onClick = onOpenControls)
-            SettingRow(stringResource(R.string.settings_margin), subtitle = "${s.screenMarginDp} dp", onClick = { dialog = "margin" })
-
-            SectionHeader(stringResource(R.string.settings_appearance))
-            SettingRow(stringResource(R.string.settings_theme), subtitle = themeLabel(s.themeMode), onClick = { dialog = "theme" })
-
-            SectionHeader(stringResource(R.string.settings_advanced))
-            SettingRow(stringResource(R.string.settings_diagnostics), subtitle = stringResource(R.string.settings_diagnostics_hint), onClick = onOpenDiagnostics)
-            SettingRow(stringResource(R.string.settings_rerun_onboarding), onClick = { dialog = "rerun" })
-            SettingRow(stringResource(R.string.settings_version), subtitle = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-            Spacer(Modifier.height(24.dp))
+        if (wide) {
+            Row(Modifier.fillMaxSize()) {
+                Column(
+                    Modifier.width(248.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(start = layout.margin, end = 16.dp, top = 8.dp, bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    categories.forEach { c -> CategoryItem(c, c == category) { category = c } }
+                }
+                Box(Modifier.weight(1f).fillMaxHeight()) { content() }
+            }
+        } else {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = layout.margin, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                categories.forEach { c ->
+                    val selected = c == category
+                    Text(
+                        stringResource(c.label),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (selected) colors.white else colors.onSurface,
+                        modifier = Modifier.gamepadFocusRing(PillShape).clip(PillShape).background(if (selected) colors.primary else colors.surface)
+                            .clickable { category = c }.padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) { content() }
         }
     }
 
@@ -201,7 +305,6 @@ fun SettingsScreen(
         "root" -> RootChooserDialog(preferredNames = vm.rootNames, onChosen = { vm.setRoot(it); dialog = null }, onDismiss = { dialog = null })
         "bios" -> TextInputDialog(stringResource(R.string.settings_bios_path), s.biosPath.orEmpty(), hint = "/storage/emulated/0/RetroArch/system", onDismiss = { dialog = null }) { vm.setBiosPath(it.ifBlank { null }); dialog = null }
         "concurrency" -> ChoiceDialog(stringResource(R.string.settings_concurrency), (1..5).map { it.toString() to null }, s.concurrency - 1, onDismiss = { dialog = null }) { vm.setConcurrency(it + 1); dialog = null }
-        "margin" -> ChoiceDialog(stringResource(R.string.settings_margin), listOf(0, 4, 8, 12, 16).map { "$it dp" to null }, listOf(0, 4, 8, 12, 16).indexOf(s.screenMarginDp).coerceAtLeast(0), onDismiss = { dialog = null }) { vm.setMargin(listOf(0, 4, 8, 12, 16)[it]); dialog = null }
         "theme" -> ChoiceDialog(stringResource(R.string.settings_theme), ThemeMode.entries.map { themeLabel(it) to null }, ThemeMode.entries.indexOf(s.themeMode), onDismiss = { dialog = null }) { vm.setTheme(ThemeMode.entries[it]); dialog = null }
         "perplatform" -> PerPlatformDialog(vm, s, onDismiss = { dialog = null })
         "rerun" -> RommDialog(onDismissRequest = { dialog = null }, title = stringResource(R.string.settings_rerun_onboarding), confirmText = stringResource(R.string.action_continue), onConfirm = { dialog = null; vm.resetOnboarding(); onRerunOnboarding() }, focusConfirm = false) {
@@ -229,15 +332,14 @@ fun TextInputDialog(
 ) {
     var value by remember { mutableStateOf(initial) }
     RommDialog(onDismissRequest = onDismiss, title = title, confirmText = stringResource(R.string.action_save), onConfirm = { onConfirm(value.trim()) }, focusConfirm = false) {
-        OutlinedTextField(
+        RommTextField(
             value = value,
             onValueChange = { value = it },
-            singleLine = true,
-            placeholder = hint?.let { { Text(it) } },
-            isError = error != null,
-            supportingText = error?.let { { Text(it) } },
+            placeholder = hint,
+            error = error,
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-            modifier = Modifier.fillMaxWidth().gamepadTextField(MaterialTheme.shapes.small),
+            modifier = Modifier.fillMaxWidth(),
+            fieldModifier = Modifier.gamepadTextField(com.rommmobile.app.core.design.PillShape),
         )
     }
 }
@@ -250,9 +352,9 @@ private fun CloudflareDialog(initialId: String, initialSecret: String, onDismiss
         Column {
             Text(stringResource(R.string.settings_cf_hint), style = MaterialTheme.typography.bodySmall, color = RommTheme.colors.onSurfaceMuted)
             Spacer(Modifier.height(8.dp))
-            OutlinedTextField(value = id, onValueChange = { id = it }, singleLine = true, label = { Text("CF-Access-Client-Id") }, modifier = Modifier.fillMaxWidth().gamepadTextField(MaterialTheme.shapes.small))
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(value = secret, onValueChange = { secret = it }, singleLine = true, label = { Text("CF-Access-Client-Secret") }, modifier = Modifier.fillMaxWidth().gamepadTextField(MaterialTheme.shapes.small))
+            RommTextField(value = id, onValueChange = { id = it }, label = "CF-Access-Client-Id", modifier = Modifier.fillMaxWidth(), fieldModifier = Modifier.gamepadTextField(com.rommmobile.app.core.design.PillShape))
+            Spacer(Modifier.height(14.dp))
+            RommTextField(value = secret, onValueChange = { secret = it }, label = "CF-Access-Client-Secret", modifier = Modifier.fillMaxWidth(), fieldModifier = Modifier.gamepadTextField(com.rommmobile.app.core.design.PillShape))
         }
     }
 }
@@ -288,4 +390,82 @@ fun ChoiceDialog(
             }
         }
     }
+}
+
+
+/** The settings, by subject. */
+private enum class SettingsCategory(val label: Int, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    SERVER(R.string.settings_server, androidx.compose.material.icons.Icons.Rounded.Dns),
+    STORAGE(R.string.settings_launcher_folders, androidx.compose.material.icons.Icons.Rounded.Folder),
+    DOWNLOADS(R.string.settings_downloads, androidx.compose.material.icons.Icons.Rounded.FileDownload),
+    CONTROLS(R.string.settings_controls, androidx.compose.material.icons.Icons.Rounded.SportsEsports),
+    DISPLAY(R.string.settings_appearance, androidx.compose.material.icons.Icons.Rounded.Monitor),
+    ADVANCED(R.string.settings_advanced, androidx.compose.material.icons.Icons.Rounded.Tune),
+}
+
+/** Sidebar entry: icon and name; the open one filled, the focused one tinted. */
+@Composable
+private fun CategoryItem(c: SettingsCategory, selected: Boolean, onSelect: () -> Unit) {
+    val colors = RommTheme.colors
+    val shape = MaterialTheme.shapes.medium
+    var focused by remember { mutableStateOf(false) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .onFocusChanged {
+                focused = it.isFocused
+                // Landing on a category opens it: no extra press to see what is inside.
+                if (it.isFocused && !selected) onSelect()
+            }
+            .clip(shape)
+            .background(
+                when {
+                    selected -> colors.primary.copy(alpha = 0.18f)
+                    focused -> colors.surfaceHover
+                    else -> androidx.compose.ui.graphics.Color.Transparent
+                },
+            )
+            .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = onSelect)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(c.icon, null, tint = if (selected) colors.primaryLighten else colors.onSurfaceMuted, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(
+            stringResource(c.label),
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (selected || focused) colors.onSurface else colors.onSurfaceMuted,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** A group of rows on one rounded surface, as on the RomM web settings. */
+@Composable
+private fun SettingsCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    val colors = RommTheme.colors
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp)
+            .clip(MaterialTheme.shapes.large)
+            .background(colors.surface)
+            .padding(vertical = 4.dp),
+        content = content,
+    )
+}
+
+private fun android.content.Context.findActivity(): android.app.Activity? {
+    var c: android.content.Context? = this
+    while (c is android.content.ContextWrapper) {
+        if (c is android.app.Activity) return c
+        c = c.baseContext
+    }
+    return null
+}
+
+private fun hasSecondScreen(context: android.content.Context): Boolean {
+    val dm = context.getSystemService(android.hardware.display.DisplayManager::class.java) ?: return false
+    return dm.displays.count { it.state != android.view.Display.STATE_OFF } > 1
 }

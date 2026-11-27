@@ -1,5 +1,7 @@
 package com.rommmobile.app.core.design
 
+import androidx.compose.foundation.gestures.animateScrollBy
+import kotlinx.coroutines.launch
 import com.rommmobile.app.core.input.LogicalButton
 import com.rommmobile.app.core.input.LocalGamepad
 import androidx.compose.animation.core.animateFloatAsState
@@ -91,7 +93,8 @@ fun Modifier.gamepadFocusRing(shape: Shape, ringWidthDp: Int = 2): Modifier = co
         .zIndex(if (focused) 1f else 0f)
         .onFocusChanged { focused = it.isFocused }
         .graphicsLayer {
-            val s = 1f + 0.06f * t
+            // Barely: the ring already says where the cursor is.
+            val s = 1f + 0.03f * t
             scaleX = s
             scaleY = s
         }
@@ -111,8 +114,10 @@ private fun Modifier.focusGlow(shape: Shape, t: Float): Modifier = composed {
     drawWithContent {
         drawContent()
         if (t <= 0f) return@drawWithContent
-        val gap = 3.dp.toPx()
-        val line = 2.dp.toPx()
+        // Kept quiet on purpose: thin line, small gap, one faint halo. The earlier double glow
+        // drew more attention than the control it pointed at.
+        val gap = 2.dp.toPx()
+        val line = 1.5.dp.toPx()
         // Each pass is inset by a negative amount so `size` inside it is the enlarged box and the
         // outline keeps the control's proportions instead of being a bigger blob around it.
         fun ring(offset: Float, width: Float, color: Color) {
@@ -120,9 +125,8 @@ private fun Modifier.focusGlow(shape: Shape, t: Float): Modifier = composed {
                 drawOutline(shape.createOutline(size, layoutDirection, this), color, style = Stroke(width))
             }
         }
-        ring(gap + line + 6.dp.toPx(), 8.dp.toPx(), colors.primaryLighten.copy(alpha = 0.10f * t))
-        ring(gap + line + 2.dp.toPx(), 4.dp.toPx(), colors.primaryLighten.copy(alpha = 0.28f * t))
-        ring(gap + line / 2f, line, colors.white.copy(alpha = 0.95f * t))
+        ring(gap + line + 1.5.dp.toPx(), 3.dp.toPx(), colors.primaryLighten.copy(alpha = 0.14f * t))
+        ring(gap + line / 2f, line, colors.white.copy(alpha = 0.85f * t))
     }
 }
 
@@ -159,11 +163,18 @@ fun Modifier.gamepadFocusRow(shape: Shape): Modifier = composed {
  * inside the field. This moves focus out instead, and draws the usual ring.
  */
 @OptIn(ExperimentalLayoutApi::class)
-fun Modifier.gamepadTextField(shape: Shape, ringWidthDp: Int = 2, onDismissed: (() -> Unit)? = null): Modifier = composed {
+fun Modifier.gamepadTextField(
+    shape: Shape,
+    ringWidthDp: Int = 2,
+    onDismissed: (() -> Unit)? = null,
+    /** A on the field: return true when it was taken as "go on" (keyboard then closes). */
+    onSubmit: (() -> Boolean)? = null,
+): Modifier = composed {
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val bus = LocalGamepad.current
     val imeVisible = WindowInsets.isImeVisible
+    val resolver = androidx.compose.ui.platform.LocalContext.current.contentResolver
     this
         // Before the IME sees it, or the keyboard swallows B and the field keeps focus and simply
         // reopens it. Consumed ONLY while the keyboard is up: with it down, B has to stay a
@@ -173,9 +184,31 @@ fun Modifier.gamepadTextField(shape: Shape, ringWidthDp: Int = 2, onDismissed: (
         .onInterceptKeyBeforeSoftKeyboard { event ->
             // Pre-IME dispatch runs before the Activity ever sees the key, so the user's map is
             // consulted here directly: the button printed B, whatever code it reports.
-            val isB = bus.logicalFor(event.nativeKeyEvent.keyCode) == LogicalButton.B
+            val logical = bus.logicalFor(event.nativeKeyEvent.keyCode)
+            // The keyboard gets keys before the app while it is up, even pinned to the other
+            // screen, and it ate the d-pad and A: focus stayed stuck in the field. Taken here:
+            // up/down leave the field (closing the keyboard), A goes on or opens the keyboard.
+            val isA = logical == LogicalButton.A || event.key == Key.DirectionCenter
+            val isVertical = event.key == Key.DirectionDown || event.key == Key.DirectionUp
+            if (isA || isVertical) {
+                if (event.type == KeyEventType.KeyDown) {
+                    when {
+                        isVertical -> {
+                            keyboard?.hide()
+                            focusManager.moveFocus(if (event.key == Key.DirectionDown) FocusDirection.Down else FocusDirection.Up)
+                        }
+                        onSubmit?.invoke() == true -> keyboard?.hide()
+                        else -> keyboard?.show()
+                    }
+                }
+                return@onInterceptKeyBeforeSoftKeyboard true
+            }
+            val isB = logical == LogicalButton.B
             if (!isB && event.key != Key.Back) return@onInterceptKeyBeforeSoftKeyboard false
-            if (!imeVisible) return@onInterceptKeyBeforeSoftKeyboard false
+            // AYN Thor can pin the keyboard to the bottom screen: it is then up but on another
+            // display, so this window's insets never show it and B could not close it any more.
+            val imeElsewhere = runCatching { android.provider.Settings.System.getInt(resolver, "ime_show_on_second", 0) == 1 }.getOrDefault(false)
+            if (!imeVisible && !imeElsewhere) return@onInterceptKeyBeforeSoftKeyboard false
             if (event.type == KeyEventType.KeyDown) {
                 keyboard?.hide()
                 focusManager.clearFocus()
@@ -186,6 +219,13 @@ fun Modifier.gamepadTextField(shape: Shape, ringWidthDp: Int = 2, onDismissed: (
         }
         .onPreviewKeyEvent { event ->
             if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+            // A on a field whose keyboard was put away: bring it back. Without this, once the
+            // keyboard was closed from its own button the field kept focus and the pad had no
+            // way to reopen it.
+            if (bus.logicalFor(event.nativeKeyEvent.keyCode) == LogicalButton.A || event.key == Key.DirectionCenter) {
+                keyboard?.show()
+                return@onPreviewKeyEvent true
+            }
             when (event.key) {
                 Key.DirectionDown -> focusManager.moveFocus(FocusDirection.Down)
                 Key.DirectionUp -> focusManager.moveFocus(FocusDirection.Up)
@@ -194,4 +234,45 @@ fun Modifier.gamepadTextField(shape: Shape, ringWidthDp: Int = 2, onDismissed: (
         }
     // No ring here: the field already answers focus with its own coloured border (Material
     // OutlinedTextField), and a second outline around a search box was one too many.
+}
+
+
+/**
+ * D-pad scrolling for a page made mostly of text (a game's overview): down moves focus to the
+ * next control when there is one, otherwise scrolls the page a step; up first scrolls back what
+ * the d-pad scrolled, then moves focus as usual. Without it the cursor stopped on the tabs and
+ * the description under them could not be read from the pad.
+ */
+fun Modifier.dpadScroll(state: androidx.compose.foundation.ScrollState, step: androidx.compose.ui.unit.Dp = 160.dp): Modifier = composed {
+    val focusManager = LocalFocusManager.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    // How far the d-pad (not focus) has scrolled the page: up gives that back first.
+    var extra by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    onPreviewKeyEvent { e ->
+        if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+        val px = with(density) { step.toPx() }
+        when (e.key) {
+            Key.DirectionDown -> when {
+                extra == 0f && focusManager.moveFocus(FocusDirection.Down) -> true
+                state.canScrollForward -> {
+                    val d = px.coerceAtMost((state.maxValue - state.value).toFloat())
+                    extra += d
+                    scope.launch { state.animateScrollBy(d) }
+                    true
+                }
+                // End of the page: swallowed. Let through, the focus search wrapped round to the
+                // back arrow at the top, off a page scrolled down, and up could not undo it.
+                extra > 0f || !state.canScrollForward -> true
+                else -> false
+            }
+            Key.DirectionUp -> if (extra > 0f) {
+                val d = extra.coerceAtMost(px)
+                extra -= d
+                scope.launch { state.animateScrollBy(-d) }
+                true
+            } else false
+            else -> false
+        }
+    }
 }

@@ -53,6 +53,16 @@ The order is designed to have something usable early and to avoid building the U
 - Cover download into `downloaded_media/<system>/covers/`.
 - BIOS/firmware section with `RetroArch/system/` as destination and no silent overwrite.
 
+## UI v2 (fork, `ui-v2` branch) — done
+
+- RomM web v2 look across every screen (doc 02), side rail / bottom pill by screen shape, shared bottom fade, quieter focus.
+- Second screen for dual-screen handhelds, with swap and per-part info settings (doc 02, §7).
+- Setup from the pad: pad detection and auto-mapping, button layout, keyboard pinned to the other screen handled, device-code sign-in with LB / RB between methods.
+- Per-file downloads of DLC, updates, mods and BIOS; extracted games recognised; X to download from a grid.
+- Settings by category; French localisation.
+
+Still open from M4: input test screen. M5 is unchanged.
+
 ## After v1 (not planned)
 
 Collection sync to the device (Wi-Fi only, only while charging), save sync, Cloudflare Access as a top-level setting, "open with external app" after download (a plain `ACTION_VIEW`: it does not make us a frontend, but it is convenient), deep links, F-Droid publication.
@@ -75,6 +85,7 @@ Applies to every milestone:
 | Retroid Pocket Classic | 1240×1080 @ ~420 dpi | ~472 × 411 | side rail, 40 dp top bar, at least 3 columns, readable alphabet rail |
 | RG Cube (1:1) | 720×720 | ~360 × 360 | worst case: everything must fit, no truncated text in the rail |
 | Landscape handheld (RP5, Odin 2) | 1920×1080 | ~640 × 360 | MEDIUM but SHORT class: rail plus wide grid, no bottom bar |
+| AYN Thor (two screens) | 1920×1080 + 1240×1080 | ~833 × 468 + ~538 × 468 | rail on the top screen, bottom pill when the app runs on the bottom one, companion view on the other screen, keyboard pinned to the bottom screen |
 | Phone | 2400×1080 | ~393 × 873 | bottom bar, 2–3 columns, edge-to-edge insets |
 | Tablet / dock | 2560×1600 | ~1280 × 800 | two panes, 6–8 columns |
 | Android TV 1080p | 1920×1080 | 960 × 540 | overscan, no SAF picker, D-pad only |

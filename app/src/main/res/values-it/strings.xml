@@ -46,7 +46,7 @@
     <string name="error_not_found">Il server risponde 404 su %s. Controlla la versione di RomM: l’app è pensata per RomM 5.x.</string>
     <string name="error_non_json">Il server ha risposto con una pagina web invece che con dati. Probabilmente c’è di mezzo un reverse proxy o una pagina di login.</string>
     <string name="error_timeout">Il server ci mette troppo a rispondere. Controlla il Wi-Fi e che RomM sia acceso.</string>
-    <string name="error_offline">Server non raggiungibile. Controlla la connessione e l’indirizzo.</string>
+    <string name="error_offline">Server non raggiungibile. Controlla la connessione e l’indirizzo. Usi una VPN? Verifica che sia connessa su questo dispositivo.</string>
     <string name="error_tls">Connessione sicura fallita. Il certificato non è considerato attendibile da questo dispositivo.</string>
     <string name="error_cleartext_blocked">HTTP in chiaro verso internet è bloccato. Usa HTTPS oppure consentilo in Impostazioni → Avanzate.</string>
     <string name="error_server">Errore del server %1$d. %2$s</string>
@@ -117,7 +117,7 @@
 
     <string name="dl_subtitle">%1$d attivi · %2$d in attesa</string>
     <string name="dl_empty">Nessun download</string>
-    <string name="dl_empty_hint">Premi X su un gioco, oppure aprilo e scegli Scarica.</string>
+    <string name="dl_empty_hint">Premi {X} su un gioco, oppure aprilo e scegli Scarica.</string>
     <string name="dl_section_active">Attivi</string>
     <string name="dl_section_waiting">In attesa</string>
     <string name="dl_section_failed">Falliti</string>
@@ -342,4 +342,61 @@
     <string name="bulk_delete_body">I file vengono eliminati da questo dispositivo. Restano su RomM e puoi riscaricarli quando vuoi.</string>
     <string name="bulk_delete_done">%d eliminati dal dispositivo</string>
     <string name="select_none">Seleziona almeno un gioco</string>
+    <!-- Pagina del gioco, layout v2 -->
+    <string name="tab_overview">Panoramica</string>
+    <string name="tab_media">Media</string>
+    <string name="tab_files">File</string>
+    <string name="detail_genres">Generi</string>
+    <string name="detail_companies">Aziende</string>
+    <string name="detail_release">Data di uscita</string>
+    <string name="detail_file">File</string>
+    <string name="detail_no_summary">Ancora nessuna descrizione per questo gioco.</string>
+    <string name="detail_no_media">Nessuno screenshot per questo gioco.</string>
+    <string name="detail_screenshot">Screenshot %1$d di %2$d</string>
+    <string name="detail_missing">Assente dal server</string>
+    <plurals name="games_count">
+        <item quantity="one">%d gioco</item>
+        <item quantity="many">%d giochi</item>
+        <item quantity="other">%d giochi</item>
+    </plurals>
+    <!-- Categorie di file RomM -->
+    <string name="cat_game">Gioco</string>
+    <string name="cat_dlc">DLC</string>
+    <string name="cat_update">Aggiornamento</string>
+    <string name="cat_mod">Mod</string>
+    <string name="cat_patch">Patch</string>
+    <string name="cat_hack">Hack</string>
+    <string name="cat_translation">Traduzione</string>
+    <string name="cat_demo">Demo</string>
+    <string name="cat_prototype">Prototipo</string>
+    <string name="cat_manual">Manuale</string>
+    <string name="cat_cheat">Trucchi</string>
+    <string name="action_download_file">Scarica %s</string>
+    <string name="toast_file_present">%s è già sul dispositivo</string>
+    <string name="settings_dual_screen">Secondo schermo</string>
+    <string name="settings_dual_screen_hint">Sulle console a doppio schermo, l’altro schermo mostra il gioco selezionato: screenshot, copertina e descrizione</string>
+    <string name="dual_idle">Seleziona un gioco per vederlo qui</string>
+    <string name="dual_bios_count">BIOS: %d</string>
+    <string name="hint_tabs">Schede</string>
+    <plurals name="dual_players">
+        <item quantity="one">%s giocatore</item>
+        <item quantity="many">%s giocatori</item>
+        <item quantity="other">%s giocatori</item>
+    </plurals>
+    <string name="dual_setup">Configurazione in corso</string>
+    <string name="dual_setup_hint">Segui i passaggi sullo schermo principale</string>
+    <string name="controls_detected">Controller rilevato: %s</string>
+    <string name="controls_auto">Tasti configurati automaticamente. Personalizzali se uno non corrisponde.</string>
+    <string name="controls_customize">Personalizza i tasti</string>
+    <string name="face_layout_title">Disposizione dei tasti</string>
+    <string name="face_layout_hint">Dove si trova il tasto A sul tuo controller: i suggerimenti a schermo illuminano quell’angolo.</string>
+    <string name="face_layout_xbox">A in basso (Xbox)</string>
+    <string name="face_layout_nintendo">A a destra (Nintendo)</string>
+    <string name="settings_swap_screens">Scambia gli schermi</string>
+    <string name="settings_swap_screens_hint">Sposta l’app sull’altro schermo e la scheda del gioco su questo</string>
+    <string name="settings_preview_block">Riquadro informazioni</string>
+    <string name="settings_preview_block_hint">Mostrato sull’immagine dell’altro schermo</string>
+    <string name="settings_preview_title">Logo o titolo</string>
+    <string name="settings_preview_tags">Etichette (piattaforma, anno, voto…)</string>
+    <string name="settings_preview_summary">Riassunto</string>
 </resources>

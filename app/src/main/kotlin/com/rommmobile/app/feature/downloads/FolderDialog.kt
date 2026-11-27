@@ -1,5 +1,7 @@
 package com.rommmobile.app.feature.downloads
 
+import androidx.compose.material.icons.rounded.Folder
+import com.rommmobile.app.core.design.RommTextField
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -57,12 +58,13 @@ fun FolderDialog(
                         Text(stringResource(R.string.folder_create_unsupported), style = MaterialTheme.typography.bodySmall, color = colors.accent)
                     }
                     Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(
+                    RommTextField(
                         value = name,
                         onValueChange = { name = it.replace(Regex("[\\\\/:*?\"<>|]"), "") },
-                        singleLine = true,
-                        label = { Text(stringResource(R.string.folder_name_label)) },
-                        modifier = Modifier.fillMaxWidth().gamepadTextField(MaterialTheme.shapes.small),
+                        label = stringResource(R.string.folder_name_label),
+                        leadingIcon = androidx.compose.material.icons.Icons.Rounded.Folder,
+                        modifier = Modifier.fillMaxWidth(),
+                        fieldModifier = Modifier.gamepadTextField(com.rommmobile.app.core.design.PillShape),
                     )
                 }
             }

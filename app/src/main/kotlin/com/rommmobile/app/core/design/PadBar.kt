@@ -109,5 +109,7 @@ fun PadBar(vararg keys: Any?, modifier: Modifier = Modifier, content: PadMapBuil
         if (logical != null && buttons.codeFor(logical) == null) return@mapNotNull null
         row.label?.let { row.action.button to stringResource(it) }
     }
-    if (hasGamepad && hints.isNotEmpty()) KeyHintBar(hints, modifier)
+    // Two buttons with the same label read as one hint ("LB RB  Tabs"), not two half-hints.
+    val merged = hints.groupBy { it.second }.map { (label, rows) -> rows.map { it.first } to label }
+    if (hasGamepad && merged.isNotEmpty()) KeyHintBarMulti(merged, modifier)
 }

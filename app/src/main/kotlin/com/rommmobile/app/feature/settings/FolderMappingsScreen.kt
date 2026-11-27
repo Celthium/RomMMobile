@@ -1,5 +1,7 @@
 package com.rommmobile.app.feature.settings
 
+import androidx.compose.material.icons.rounded.Folder
+import com.rommmobile.app.core.design.RommTextField
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -24,7 +26,6 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -144,7 +145,7 @@ fun FolderMappingsScreen(onBack: () -> Unit) {
         if (rows.isEmpty()) {
             EmptyState(Icons.Rounded.CreateNewFolder, stringResource(R.string.mappings_empty))
         } else {
-            LazyColumn(state = listState, modifier = Modifier.fillMaxSize().rightStickScroll(listState), contentPadding = PaddingValues(vertical = 4.dp, horizontal = 4.dp)) {
+            LazyColumn(state = listState, modifier = Modifier.fillMaxSize().rightStickScroll(listState), contentPadding = PaddingValues(vertical = 4.dp)) {
                 items(rows, key = { it.platform.id }) { row ->
                     val (icon, tint, text) = when (row.status) {
                         MappingStatus.FOUND -> Triple(Icons.Rounded.CheckCircle, colors.green, row.mapping!!.relDir + " · " + pluralStringResource(R.plurals.n_files, row.mapping.fileCount, row.mapping.fileCount) + sourceSuffix(row.mapping.source))
@@ -213,7 +214,7 @@ fun MappingEditDialog(
             }
             Spacer(Modifier.padding(6.dp))
             Text(stringResource(R.string.mapping_edit_create), style = MaterialTheme.typography.titleSmall)
-            OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true, modifier = Modifier.fillMaxWidth().gamepadTextField(MaterialTheme.shapes.small))
+            RommTextField(value = newName, onValueChange = { newName = it }, leadingIcon = androidx.compose.material.icons.Icons.Rounded.Folder, modifier = Modifier.fillMaxWidth(), fieldModifier = Modifier.gamepadTextField(com.rommmobile.app.core.design.PillShape))
             if (row.mapping != null) {
                 Spacer(Modifier.padding(6.dp))
                 SettingRow(stringResource(R.string.mapping_remove), subtitle = stringResource(R.string.mapping_remove_hint), onClick = onClear)

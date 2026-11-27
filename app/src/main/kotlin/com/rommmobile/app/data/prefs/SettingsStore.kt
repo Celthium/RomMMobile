@@ -71,7 +71,24 @@ data class Settings(
     val buttonMap: ButtonMap,
     /** True once a map was recorded or edited by the user: the wizard then stops offering to record one. */
     val buttonMapRecorded: Boolean,
+    /** Second screen of a dual-screen handheld shows the focused game (on by default). */
+    val dualScreen: Boolean = true,
+    /** Where A is printed; null = not said, guessed from the device. */
+    val faceLayout: com.rommmobile.app.core.input.FaceLayout? = null,
+    /** What the info block over the picture on the other screen shows. */
+    val preview: PreviewOptions = PreviewOptions(),
 )
+
+/** The info block of the second screen: shown at all, and which of its parts. */
+data class PreviewOptions(
+    val block: Boolean = true,
+    val title: Boolean = true,
+    val tags: Boolean = true,
+    val summary: Boolean = true,
+) {
+    /** Anything left to show once the parts are counted. */
+    val visible: Boolean get() = block && (title || tags || summary)
+}
 
 @Singleton
 class SettingsStore @Inject constructor(@ApplicationContext private val context: Context) {
@@ -98,6 +115,12 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val extractOverrides = stringSetPreferencesKey("extract_overrides") // "slug=true"
         val buttonMap = stringPreferencesKey("button_map") // "UP:19,DOWN:20,..."
         val buttonMapRecorded = booleanPreferencesKey("button_map_recorded")
+        val dualScreen = booleanPreferencesKey("dual_screen")
+        val faceLayout = stringPreferencesKey("face_layout")
+        val previewBlock = booleanPreferencesKey("preview_block")
+        val previewTitle = booleanPreferencesKey("preview_title")
+        val previewTags = booleanPreferencesKey("preview_tags")
+        val previewSummary = booleanPreferencesKey("preview_summary")
     }
 
     val settings: Flow<Settings> = ds.data
@@ -126,6 +149,14 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             }.toMap(),
             buttonMap = ButtonMap.decode(p[K.buttonMap]),
             buttonMapRecorded = p[K.buttonMapRecorded] ?: false,
+            dualScreen = p[K.dualScreen] ?: true,
+            faceLayout = com.rommmobile.app.core.input.FaceLayout.parse(p[K.faceLayout]),
+            preview = PreviewOptions(
+                block = p[K.previewBlock] ?: true,
+                title = p[K.previewTitle] ?: true,
+                tags = p[K.previewTags] ?: true,
+                summary = p[K.previewSummary] ?: true,
+            ),
         )
     }
 
@@ -136,6 +167,9 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
     val storageRoot: Flow<StorageRoot?> = settings.map { it.storageRoot }.distinctUntilChanged()
     val launcher: Flow<Launcher> = settings.map { it.launcher }.distinctUntilChanged()
     val buttonMap: Flow<ButtonMap> = settings.map { it.buttonMap }.distinctUntilChanged()
+    val dualScreen: Flow<Boolean> = settings.map { it.dualScreen }.distinctUntilChanged()
+    val faceLayout: Flow<com.rommmobile.app.core.input.FaceLayout?> = settings.map { it.faceLayout }.distinctUntilChanged()
+    val preview: Flow<PreviewOptions> = settings.map { it.preview }.distinctUntilChanged()
 
     suspend fun snapshot(): Settings = settings.first()
 
@@ -146,6 +180,11 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
     suspend fun setSort(field: SortField, descending: Boolean) = ds.edit { it[K.sortField] = field.name; it[K.sortDesc] = descending }
     suspend fun setConcurrency(v: Int) = ds.edit { it[K.concurrency] = v.coerceIn(1, 5) }
     suspend fun setWifiOnly(v: Boolean) = ds.edit { it[K.wifiOnly] = v }
+    suspend fun setDualScreen(v: Boolean) = ds.edit { it[K.dualScreen] = v }
+    suspend fun setFaceLayout(v: com.rommmobile.app.core.input.FaceLayout) = ds.edit { it[K.faceLayout] = v.name }
+    suspend fun setPreview(v: PreviewOptions) = ds.edit {
+        it[K.previewBlock] = v.block; it[K.previewTitle] = v.title; it[K.previewTags] = v.tags; it[K.previewSummary] = v.summary
+    }
     suspend fun setAutoExtractZip(v: Boolean) = ds.edit { it[K.autoExtractZip] = v }
     suspend fun setAutoExtract7z(v: Boolean) = ds.edit { it[K.autoExtract7z] = v }
     suspend fun setFolderPerGame(slugs: Set<String>) = ds.edit { it[K.folderPerGame] = slugs; it[K.folderPerGameCustomized] = true }
