@@ -1,5 +1,7 @@
 package com.rommmobile.app.data.repo
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.rommmobile.app.core.network.ServerStore
 import com.rommmobile.app.core.storage.StorageRoot
 import com.rommmobile.app.core.util.FileLogger
@@ -57,20 +59,31 @@ class DownloadRepository @Inject constructor(
             Resolution.NoRoot -> return EnqueueResult.NoRoot
             else -> return EnqueueResult.NeedsFolder(platform, res)
         }
-        val fileName = rom.downloadFileName
+        val main = if (rom.isNestedSingle) rom.mainFile else null
+        val fileName = main?.fileName ?: rom.downloadFileName
         if (!force && localLibrary.isPresent(rom.platformSlug, rom.fsName)) return EnqueueResult.AlreadyPresent
 
         dao.byRomAndName(rom.id, fileName)?.let { existing ->
             when {
                 !existing.state.isTerminal -> return EnqueueResult.AlreadyQueued
-                existing.state == DownloadState.COMPLETED && !force -> return EnqueueResult.AlreadyPresent
+                // A finished download only means "on the device" while the file is still there.
+                // Uninstalled (or deleted by hand), the old row used to keep answering "already
+                // on the device" and the game could not simply be downloaded again.
+                existing.state == DownloadState.COMPLETED && !force && localLibrary.isPresent(rom.platformSlug, rom.fsName) ->
+                    return EnqueueResult.AlreadyPresent
                 else -> dao.delete(existing.id)
             }
         }
 
         val s = settings.snapshot()
         val folderPerGame = rom.hasMultipleFiles && rom.platformSlug in s.folderPerGameSlugs
-        val targetRelDir = if (folderPerGame) "$relDir/${sanitizeFolder(rom.fsNameNoExt)}" else relDir
+        val targetRelDir = when {
+            // Mirrors the server: the game goes into its own folder, where its DLC and updates
+            // will land too, and the folder name is what marks the game as present.
+            main != null -> "$relDir/${sanitizeFolder(rom.fsName)}"
+            folderPerGame -> "$relDir/${sanitizeFolder(rom.fsNameNoExt)}"
+            else -> relDir
+        }
         val ext = fileName.substringAfterLast('.', "").lowercase()
         val extract = when {
             rom.hasMultipleFiles -> true // server-made zip with the .m3u: must be unpacked to be playable
@@ -83,7 +96,12 @@ class DownloadRepository @Inject constructor(
         }
         // Relative on purpose: the host is resolved when the download actually runs, so a queue
         // built on the LAN still works after the app falls back to the remote address.
-        val url = "api/roms/${rom.id}/content/" + java.net.URLEncoder.encode(rom.fsName, "UTF-8").replace("+", "%20")
+        val url = if (main != null) {
+            // Only the game file: the folder's DLC and updates are separate, optional downloads.
+            "api/roms/${rom.id}/content/" + encode(main.fileName) + "?file_ids=${main.id}"
+        } else {
+            "api/roms/${rom.id}/content/" + encode(rom.fsName)
+        }
 
         val now = System.currentTimeMillis()
         // Two fast presses race on the (romId, fileName) unique index: treat the loser as
@@ -100,16 +118,16 @@ class DownloadRepository @Inject constructor(
                 url = url,
                 targetRelDir = targetRelDir,
                 extract = extract,
-                totalBytes = rom.sizeBytes,
+                totalBytes = main?.sizeBytes?.takeIf { it > 0 } ?: rom.sizeBytes,
                 downloadedBytes = 0,
                 state = DownloadState.PENDING,
                 error = null,
                 attempt = 0,
                 priority = 0,
                 notBefore = 0,
-                md5 = rom.md5.takeIf { !rom.hasMultipleFiles },
-                sha1 = rom.sha1.takeIf { !rom.hasMultipleFiles },
-                crc = rom.crc.takeIf { !rom.hasMultipleFiles },
+                md5 = if (main != null) main.md5 else rom.md5.takeIf { !rom.hasMultipleFiles },
+                sha1 = if (main != null) main.sha1 else rom.sha1.takeIf { !rom.hasMultipleFiles },
+                crc = if (main != null) main.crc else rom.crc.takeIf { !rom.hasMultipleFiles },
                 coverSmallPath = rom.coverSmall,
                 resultPath = null,
                 createdAt = now,
@@ -121,6 +139,54 @@ class DownloadRepository @Inject constructor(
             return EnqueueResult.AlreadyQueued
         }
         log.i("Download", "enqueued ${rom.fsName} -> $targetRelDir (extract=$extract)")
+        engine.kick()
+        return EnqueueResult.Enqueued(id, targetRelDir)
+    }
+
+    /**
+     * One file of a game on its own: a DLC, an update, a mod, a patch... RomM serves single files
+     * at `/api/roms/{fileId}/files/content/{name}`. Lands in the game's folder, in a sub-folder
+     * named after the category (`ps4/Bloodborne/dlc/`), the layout RomM itself scans.
+     */
+    suspend fun enqueueFile(rom: Rom, file: RomFile, label: String, force: Boolean = false): EnqueueResult {
+        serverStore.config.value.activeUrl ?: return EnqueueResult.NotConfigured
+        val platform = platforms.byId(rom.platformId) ?: Platform(rom.platformId, rom.platformSlug, rom.platformSlug, rom.platformName, 0, 0, 0)
+        val relDir = when (val res = mapping.resolve(platform)) {
+            is Resolution.Resolved -> res.mapping.relDir
+            Resolution.NoRoot -> return EnqueueResult.NoRoot
+            else -> return EnqueueResult.NeedsFolder(platform, res)
+        }
+        val gameFolder = sanitizeFolder(if (rom.isNestedSingle || rom.hasMultipleFiles) rom.fsName else rom.fsNameNoExt)
+        val category = file.category?.takeIf { it.isNotBlank() && it != Rom.GAME }
+        val targetRelDir = listOfNotNull(relDir, gameFolder, category?.let { sanitizeFolder(it) }).joinToString("/")
+        dao.byRomAndName(rom.id, file.fileName)?.let { existing ->
+            when {
+                !existing.state.isTerminal -> return EnqueueResult.AlreadyQueued
+                // Extras are not in the local index: "present" means the file is still in its
+                // folder. Deleted by hand (or with the game), the old row must not block it.
+                existing.state == DownloadState.COMPLETED && !force &&
+                    withContext(Dispatchers.IO) { mapping.gateway()?.exists(targetRelDir, file.fileName) == true } ->
+                    return EnqueueResult.AlreadyPresent
+                else -> dao.delete(existing.id)
+            }
+        }
+        val now = System.currentTimeMillis()
+        val id = try {
+            dao.insert(
+                DownloadEntity(
+                    kind = DownloadKind.ROM, romId = rom.id, title = "${rom.name} \u00B7 $label",
+                    platformSlug = rom.platformSlug, platformName = rom.platformName,
+                    fileName = file.fileName, url = "api/roms/${file.id}/files/content/" + encode(file.fileName),
+                    targetRelDir = targetRelDir, extract = false, totalBytes = file.sizeBytes,
+                    downloadedBytes = 0, state = DownloadState.PENDING, error = null, attempt = 0, priority = 0, notBefore = 0,
+                    md5 = file.md5, sha1 = file.sha1, crc = file.crc, coverSmallPath = rom.coverSmall,
+                    resultPath = null, createdAt = now, updatedAt = now, completedAt = null,
+                )
+            )
+        } catch (e: android.database.sqlite.SQLiteConstraintException) {
+            return EnqueueResult.AlreadyQueued
+        }
+        log.i("Download", "enqueued file ${file.fileName} (${file.category}) -> $targetRelDir")
         engine.kick()
         return EnqueueResult.Enqueued(id, targetRelDir)
     }
@@ -138,7 +204,7 @@ class DownloadRepository @Inject constructor(
         val id = dao.insert(
             DownloadEntity(
                 kind = DownloadKind.FIRMWARE, romId = -firmwareId, title = fileName, platformSlug = "bios", platformName = platformName,
-                fileName = fileName, url = url, targetRelDir = "abs:$biosDir/$fileName", extract = false, totalBytes = sizeBytes,
+                fileName = fileName, url = url, targetRelDir = "abs:$biosDir/$fileName", extract = shouldUnpackBios(fileName), totalBytes = sizeBytes,
                 downloadedBytes = 0, state = DownloadState.PENDING, error = null, attempt = 0, priority = 1, notBefore = 0,
                 md5 = md5, sha1 = sha1, crc = crc, coverSmallPath = null, resultPath = null, createdAt = now, updatedAt = now, completedAt = null,
             )
@@ -159,11 +225,31 @@ class DownloadRepository @Inject constructor(
     suspend fun hasOpen(): Boolean = dao.countOpen() > 0
 
     private companion object {
+        /** Arcade BIOS romsets that emulators read zipped (FBNeo / MAME / Flycast naming). */
+        val ARCADE_BIOS_SETS = setOf(
+            "neogeo.zip", "neocdz.zip", "pgm.zip", "skns.zip", "naomi.zip", "naomi2.zip", "awbios.zip",
+            "hikaru.zip", "cpzn1.zip", "cpzn2.zip", "decocass.zip", "isgsm.zip", "midssio.zip", "nmk004.zip",
+            "ym2608.zip", "qsound.zip", "konamigx.zip", "stvbios.zip", "f355bios.zip", "f355dlx.zip",
+            "airlbios.zip", "segasp.zip", "triforce.zip", "coleco.zip", "msx.zip", "spec128.zip", "spectrum.zip",
+        )
         /** Systems whose emulators read the archive itself; extracting it destroys the game. */
         val NEVER_EXTRACT_SLUGS = setOf(
             "arcade", "mame", "fbneo", "neogeoaes", "neogeomvs", "neo-geo", "neogeo",
             "cps1", "cps2", "cps3", "daphne", "naomi", "atomiswave", "model2", "model3",
         )
+    }
+
+    private fun encode(name: String): String = java.net.URLEncoder.encode(name, "UTF-8").replace("+", "%20")
+
+    /**
+     * A BIOS pack zipped on the server ("PlayStation 1 BIOS.zip") is useless to RetroArch, which
+     * looks for the loose scph*.bin in system/: unpack it. Arcade BIOS sets are the opposite:
+     * FBNeo and MAME load neogeo.zip & co. as archives, so those stay whole.
+     */
+    private fun shouldUnpackBios(fileName: String): Boolean {
+        val n = fileName.lowercase()
+        if (!(n.endsWith(".zip") || n.endsWith(".7z"))) return false
+        return n !in ARCADE_BIOS_SETS
     }
 
     private fun sanitizeFolder(name: String): String =
