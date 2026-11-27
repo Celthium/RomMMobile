@@ -186,6 +186,7 @@ private fun AppNavHost(appVm: AppViewModel, start: StartDestination, intentEpoch
         }
         composable<DownloadsRoute> { DownloadsScreen(onBack = { gate.pop() }) }
         composable<SettingsRoute> {
+            ExtendUnderNavBar {
             SettingsScreen(
                 onBack = { gate.pop() },
                 onOpenMappings = { gate.go(FolderMappingsRoute) },
@@ -196,6 +197,7 @@ private fun AppNavHost(appVm: AppViewModel, start: StartDestination, intentEpoch
                 onLoggedOut = { navController.navigate(LoginRoute) { popUpTo(0) { inclusive = true } } },
                 onRerunOnboarding = { navController.navigate(OnboardingRoute) { popUpTo(0) { inclusive = true } } },
             )
+            }
         }
         composable<FolderMappingsRoute> { FolderMappingsScreen(onBack = { gate.pop() }) }
         composable<DiagnosticsRoute> { DiagnosticsScreen(onBack = { gate.pop() }) }

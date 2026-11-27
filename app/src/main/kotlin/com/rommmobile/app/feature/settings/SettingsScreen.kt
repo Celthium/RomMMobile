@@ -167,7 +167,7 @@ fun SettingsScreen(
     val otherScreen = remember { hasSecondScreen(context) }
 
     val content: @Composable () -> Unit = {
-        Column(Modifier.fillMaxSize().verticalScroll(scroll).rightStickScroll(scroll).padding(start = if (wide) 0.dp else layout.margin, end = layout.margin, top = 8.dp, bottom = 24.dp + com.rommmobile.app.core.design.LocalNavBarInset.current)) {
+        Column(Modifier.fillMaxSize().verticalScroll(scroll).rightStickScroll(scroll).padding(start = if (wide) 0.dp else layout.margin, end = layout.margin, top = 8.dp, bottom = 56.dp + com.rommmobile.app.core.design.LocalNavBarInset.current)) {
             when (category) {
                 SettingsCategory.SERVER -> {
                     SettingsCard {
@@ -252,12 +252,13 @@ fun SettingsScreen(
         }
     }
 
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize()) {
         RommTopBar(title = stringResource(R.string.section_settings), onBack = onBack)
         if (wide) {
             Row(Modifier.fillMaxSize()) {
                 Column(
-                    Modifier.width(248.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(start = layout.margin, end = 16.dp, top = 8.dp, bottom = 16.dp),
+                    Modifier.width(248.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(start = layout.margin, end = 16.dp, top = 8.dp, bottom = 16.dp + com.rommmobile.app.core.design.LocalNavBarInset.current),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     categories.forEach { c -> CategoryItem(c, c == category) { category = c } }
@@ -282,6 +283,14 @@ fun SettingsScreen(
             }
             Box(Modifier.weight(1f).fillMaxWidth()) { content() }
         }
+    }
+    // The page runs on under the system bar (ExtendUnderNavBar on the route) and dims into it on
+    // the shared fade, instead of a hard edge cutting the last card just above the bar.
+    Box(
+        Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            .height(56.dp + com.rommmobile.app.core.design.LocalNavBarInset.current)
+            .background(com.rommmobile.app.core.design.softFadeBrush(colors.background, colors.isDark)),
+    )
     }
 
     when (dialog) {
