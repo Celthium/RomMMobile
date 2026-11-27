@@ -16,6 +16,7 @@
 | Pagination | Paging 3 | libraries with tens of thousands of titles |
 | Background work | WorkManager + Foreground Service (`dataSync`) | downloads must survive the app going to the background |
 | Archives | `commons-compress` (zip, 7z) | 7z must be supported: RomM serves it |
+| Video | Media3 ExoPlayer + OkHttp data source | clips on the second screen, with a disk cache |
 
 `minSdk 26`, `compileSdk`/`targetSdk` 35 or higher.
 
@@ -26,7 +27,8 @@ A single `:app` module to begin with (small project), split by package:
 ```
 core/
   design/      colour tokens, typography, reusable components, custom WindowSizeClass
-  input/       gamepad handling, keycodes, mappings, focus helpers
+  input/       gamepad handling, keycodes, mappings (ButtonMap, pad detection),
+               button layout (FaceLayout), focus helpers
   network/     OkHttp, auth interceptor, Retrofit, error handling
   storage/     FileGateway abstraction (File API + SAF behind the same interface)
 data/
@@ -42,6 +44,7 @@ feature/
   collections/ user, virtual and smart collections
   search/      server-side search
   downloads/   queue, service, notifications
+  dualscreen/  companion view on a second display (Presentation / display-only activity)
   settings/    Settings, folder mapping, input test
 ```
 
@@ -113,6 +116,8 @@ PENDING -> DOWNLOADING -> VERIFYING -> [EXTRACTING] -> MOVING -> COMPLETED
 - Retry with exponential backoff (3 attempts: 2 s, 8 s, 30 s) on network errors; no automatic retry on 401/403/404.
 - Extraction: **streaming** with `ZipInputStream`/`SevenZFile` directly onto the `FileGateway`, never loading into memory (their crashes on large zips came from there); internal subfolders preserved.
 - The "extract automatically" setting is on by default for `.zip`, **off for `.7z`** (ES-DE and RetroArch read `.7z` natively: it is often better to leave it intact).
+- Files pulled out of an archive are indexed under the **archive's name** (the name RomM knows the game by): `Double Dragon 3.zip` unpacks to `Double Dragon 3 (USA, Europe).gb`, and keyed on the inner name the game never showed as on the device. A rescan keeps that key for files the app put there.
+- Extras (DLC, updates, mods, patches) are downloaded one file at a time into `<platform>/<game>/<category>/`; a folder that holds nothing but such category folders does not count as the game.
 
 ### 5.3 UI updates
 The service publishes a `StateFlow` of the progress, sampled at 2–4 Hz for the UI. No recompositions on every chunk.
