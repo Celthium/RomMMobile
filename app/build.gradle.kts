@@ -31,8 +31,8 @@ android {
         applicationId = "com.celthium.rommmobile"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "2.0.0"
+        versionCode = 7
+        versionName = "2.1.0"
         vectorDrawables.useSupportLibrary = true
         // Only ship resources for the locales we actually translate.
         resourceConfigurations += listOf("en", "it", "fr")
