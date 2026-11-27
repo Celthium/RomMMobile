@@ -50,6 +50,10 @@ interface RomDao {
     @Query("SELECT * FROM roms WHERE id = :id")
     suspend fun byId(id: Int): RomEntity?
 
+    /** Save sync: the cached ROM a local file belongs to, by its name in a platform folder. */
+    @Query("SELECT * FROM roms WHERE platformSlug = :slug AND (fsNameNoExt = :stem OR fsName = :fileName) LIMIT 1")
+    suspend fun byFile(slug: String, stem: String, fileName: String): RomEntity?
+
     @Query("SELECT * FROM roms WHERE platformId = :platformId ORDER BY name COLLATE NOCASE, id")
     fun pagingByPlatform(platformId: Int): PagingSource<Int, RomEntity>
 
@@ -80,6 +84,10 @@ interface DownloadDao {
 
     @Query("SELECT * FROM downloads WHERE romId = :romId AND fileName = :fileName LIMIT 1")
     suspend fun byRomAndName(romId: Int, fileName: String): DownloadEntity?
+
+    /** Save sync: the games this app put on the device. */
+    @Query("SELECT * FROM downloads WHERE state = 'COMPLETED' AND kind = 'ROM'")
+    suspend fun completedRoms(): List<DownloadEntity>
 
     @Query("SELECT * FROM downloads ORDER BY CASE state WHEN 'DOWNLOADING' THEN 0 WHEN 'VERIFYING' THEN 0 WHEN 'EXTRACTING' THEN 0 WHEN 'MOVING' THEN 0 WHEN 'PENDING' THEN 1 WHEN 'PAUSED' THEN 2 WHEN 'FAILED' THEN 3 ELSE 4 END, priority DESC, createdAt ASC")
     fun observeAll(): Flow<List<DownloadEntity>>
@@ -150,6 +158,9 @@ interface LocalFileDao {
 
     @Query("SELECT * FROM local_files ORDER BY platformSlug, fileName COLLATE NOCASE")
     fun observeAll(): Flow<List<LocalFileEntity>>
+
+    @Query("SELECT * FROM local_files")
+    suspend fun all(): List<LocalFileEntity>
 
     @Query("SELECT platformSlug, COUNT(*) AS count, SUM(sizeBytes) AS bytes FROM local_files GROUP BY platformSlug")
     fun observeSummary(): Flow<List<LocalSummaryRow>>

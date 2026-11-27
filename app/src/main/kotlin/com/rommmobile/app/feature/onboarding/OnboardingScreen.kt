@@ -281,16 +281,54 @@ fun OnboardingScreen(onDone: () -> Unit) {
     }
 }
 
-/** Re-authentication after an expired session: the auth step alone. */
+/**
+ * Sign in again (after a logout or an expired session): the auth step, with the server it talks to
+ * shown on top and a way to change it, since the address may be the very reason to sign in again.
+ */
 @Composable
 fun LoginScreen(onDone: () -> Unit) {
     val vm: OnboardingViewModel = hiltViewModel()
     val state by vm.state.collectAsStateWithLifecycle()
     val session by vm.session.collectAsStateWithLifecycle()
     LaunchedEffect(session) { if (session is Session.LoggedIn) onDone() }
+    var editServer by rememberSaveable { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = editServer) { editServer = false }
+    // Dual screen: signing in again is setup too, so the other screen shows the setup card, as
+    // during the wizard, not "select a game" (there is no game to select before signing in).
+    val dual = com.rommmobile.app.feature.dualscreen.LocalDualScreen.current
+    androidx.compose.runtime.DisposableEffect(dual) {
+        dual?.setupMode?.value = true
+        onDispose { dual?.setupMode?.value = false }
+    }
+    val submit: () -> Unit = { vm.confirmServer { editServer = false; vm.restartDeviceFlow() } }
     Column(Modifier.fillMaxSize()) {
-        RommTopBar(title = stringResource(R.string.ob_step_auth), subtitle = stringResource(R.string.login_expired))
-        Box(Modifier.weight(1f)) { AuthStep(state, session, vm) }
+        RommTopBar(
+            title = stringResource(if (editServer) R.string.ob_step_server else R.string.ob_step_auth),
+            onBack = if (editServer) ({ editServer = false }) else null,
+            actions = {
+                // The address itself is the button: it says which server the code is for, and
+                // A on it changes it (short screens drop the bar's subtitle, so not there).
+                if (!editServer) {
+                    androidx.compose.material3.TextButton(onClick = { editServer = true }, modifier = Modifier.gamepadFocusRing(PillShape)) {
+                        Text(stringResource(R.string.login_server, state.serverInput.removePrefix("http://").removePrefix("https://").ifBlank { "?" }))
+                        Spacer(Modifier.width(8.dp))
+                        Icon(androidx.compose.material.icons.Icons.Rounded.Edit, contentDescription = stringResource(R.string.login_change_server), modifier = Modifier.size(18.dp))
+                    }
+                }
+            },
+        )
+        Box(Modifier.weight(1f)) {
+            if (editServer) {
+                ServerStep(state, vm::onServerInput, vm::setAdvanced, onSubmit = submit)
+                Button(
+                    onClick = submit,
+                    enabled = state.probe is ProbeState.Ok,
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(RommTheme.layout.margin).padding(bottom = LocalNavBarInset.current).gamepadFocusRing(PillShape),
+                ) { Text(stringResource(R.string.action_continue)) }
+            } else {
+                AuthStep(state, session, vm)
+            }
+        }
     }
 }
 

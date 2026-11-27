@@ -1,6 +1,7 @@
 package com.rommmobile.app.feature.settings
 
 import com.rommmobile.app.core.design.PillShape
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Monitor
 import androidx.compose.material.icons.rounded.SportsEsports
@@ -167,7 +168,7 @@ fun SettingsScreen(
     val otherScreen = remember { hasSecondScreen(context) }
 
     val content: @Composable () -> Unit = {
-        Column(Modifier.fillMaxSize().verticalScroll(scroll).rightStickScroll(scroll).padding(start = if (wide) 0.dp else layout.margin, end = layout.margin, top = 8.dp, bottom = 24.dp + com.rommmobile.app.core.design.LocalNavBarInset.current)) {
+        Column(Modifier.fillMaxSize().verticalScroll(scroll).rightStickScroll(scroll).padding(start = if (wide) 0.dp else layout.margin, end = layout.margin, top = 8.dp, bottom = 56.dp + com.rommmobile.app.core.design.LocalNavBarInset.current)) {
             when (category) {
                 SettingsCategory.SERVER -> {
                     SettingsCard {
@@ -207,6 +208,11 @@ fun SettingsScreen(
                         SettingRow(stringResource(R.string.settings_per_platform), subtitle = stringResource(R.string.settings_per_platform_hint), onClick = { dialog = "perplatform" })
                     }
                 }
+                SettingsCategory.SYNC -> com.rommmobile.app.feature.sync.SyncSettingsSection(
+                    card = { inner -> SettingsCard(inner) },
+                    // Write scopes come with a new login: the logout dialog leads there.
+                    onRelogin = { dialog = "logout" },
+                )
                 SettingsCategory.CONTROLS -> {
                     SettingsCard {
                         SettingRow(stringResource(R.string.settings_button_map), subtitle = stringResource(if (s.buttonMap.isDefault) R.string.settings_button_map_default else R.string.settings_button_map_custom), onClick = onOpenControls)
@@ -252,12 +258,13 @@ fun SettingsScreen(
         }
     }
 
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize()) {
         RommTopBar(title = stringResource(R.string.section_settings), onBack = onBack)
         if (wide) {
             Row(Modifier.fillMaxSize()) {
                 Column(
-                    Modifier.width(248.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(start = layout.margin, end = 16.dp, top = 8.dp, bottom = 16.dp),
+                    Modifier.width(248.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(start = layout.margin, end = 16.dp, top = 8.dp, bottom = 16.dp + com.rommmobile.app.core.design.LocalNavBarInset.current),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     categories.forEach { c -> CategoryItem(c, c == category) { category = c } }
@@ -282,6 +289,14 @@ fun SettingsScreen(
             }
             Box(Modifier.weight(1f).fillMaxWidth()) { content() }
         }
+    }
+    // The page runs on under the system bar (ExtendUnderNavBar on the route) and dims into it on
+    // the shared fade, instead of a hard edge cutting the last card just above the bar.
+    Box(
+        Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            .height(56.dp + com.rommmobile.app.core.design.LocalNavBarInset.current)
+            .background(com.rommmobile.app.core.design.softFadeBrush(colors.background, colors.isDark)),
+    )
     }
 
     when (dialog) {
@@ -398,6 +413,7 @@ private enum class SettingsCategory(val label: Int, val icon: androidx.compose.u
     SERVER(R.string.settings_server, androidx.compose.material.icons.Icons.Rounded.Dns),
     STORAGE(R.string.settings_launcher_folders, androidx.compose.material.icons.Icons.Rounded.Folder),
     DOWNLOADS(R.string.settings_downloads, androidx.compose.material.icons.Icons.Rounded.FileDownload),
+    SYNC(R.string.settings_sync, androidx.compose.material.icons.Icons.Rounded.Sync),
     CONTROLS(R.string.settings_controls, androidx.compose.material.icons.Icons.Rounded.SportsEsports),
     DISPLAY(R.string.settings_appearance, androidx.compose.material.icons.Icons.Rounded.Monitor),
     ADVANCED(R.string.settings_advanced, androidx.compose.material.icons.Icons.Rounded.Tune),
@@ -443,7 +459,7 @@ private fun CategoryItem(c: SettingsCategory, selected: Boolean, onSelect: () ->
 
 /** A group of rows on one rounded surface, as on the RomM web settings. */
 @Composable
-private fun SettingsCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+internal fun SettingsCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
     val colors = RommTheme.colors
     Column(
         Modifier

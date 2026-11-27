@@ -110,3 +110,35 @@ To go further (covers and descriptions without making the frontend scrape) the r
 ## Extras next to a game
 
 RomM files a game's extras by category (`dlc`, `update`, `mod`, `patch`, …). The game page lists them under **Files** and downloads each one into `<platform folder>/<game>/<category>/`, the layout emulators that read DLC and updates from the game's folder expect (Yuzu-style). An extra is never registered as the game itself, and a game folder that contains only extras is not reported as "on the device".
+
+## 7. Save sync (RetroArch saves and states)
+
+Code: `feature/sync/`. API: doc 04, section 9. Off until the user turns it on in Settings › Save sync.
+
+### Where the files are
+
+Resolved in this order (`RetroArchConfig.detect`), separately for saves and states:
+
+1. **Folder set by hand** in the settings.
+2. **`retroarch.cfg`** of the installed RetroArch (`com.retroarch.aarch64`, `com.retroarch`, `com.retroarch.ra32`), read from `Android/data/<package>/files/` then `RetroArch/`: `savefile_directory`, `savestate_directory`, `sort_savefiles_enable` / `sort_savestates_enable` (one folder per core), `sort_*_by_content_enable` (one folder per content folder), `savefiles_in_content_dir` / `savestates_in_content_dir` (next to the ROM). `:/…` is relative to RetroArch's own folder.
+3. **RetroArch's Android defaults**: `<internal>/RetroArch/saves` and `/states`, one folder per core.
+
+ES-DE adds the emulator chosen per system: `ES-DE/settings/es_settings.xml` (`ROMDirectory`) and the `<alternativeEmulator><label>RetroArch (mGBA)</label>` at the top of each `ES-DE/gamelists/<system>/gamelist.xml`. The core named there is the folder a save that exists only on the server goes into when the server does not name its emulator.
+
+Observed on the AYN Thor (Android 13, 2026-11-27): `retroarch.cfg` in `Android/data/com.retroarch.aarch64/files/`, saves in `RetroArch/saves/<core>/` (`mGBA`, `Snes9x`, `Flycast`), states in `RetroArch/states/<core>/`, `autosave_interval = 10`.
+
+### Matching a file to a game
+
+RetroArch names a save after the content it loaded: `<ROM file without extension>.srm`, `.state`, `.state1`… `.state.auto`. The games are the ROMs this app downloaded (`downloads`, with their RomM id) and the files of the local library, matched to RomM on the ROM cache and, for files that have a save, by a server search (cached in `sync/state.json`).
+
+### Rules
+
+- **Saves**: `/api/sync/negotiate` with this device's id, slot `autosave` (`autosave-<ext>` for side files such as `.rtc`), `emulator` = RomM's core id (`mGBA` → `mgba`). Uploads keep 10 versions per slot on the server (`autocleanup`).
+- **States**: no server tracking, so the hash of each file at the last sync and the server row's id and `updated_at` are kept in `sync/state.json`. Changed on one side → sent or received; changed on both → conflict; first meeting with a file on both sides → the server copy is downloaded and compared byte for byte.
+- **Conflicts** are never settled automatically: nothing is written until the user picks "keep this device's copy" or "keep RomM's copy" (Settings › Save sync, or the game page).
+- **Restores** (files from the server) are written only while RetroArch is closed. The app knows that through the usage-event log (Android "Usage access"): the last event of each RetroArch activity is `ACTIVITY_DESTROYED` → closed, `PAUSED`/`STOPPED` → in the background (it may still hold the game in memory), `RESUMED` → open. Without that access, or with RetroArch in the background, the file waits (notification) until RetroArch is closed or the user confirms it is. If the target file changed while waiting, the restore becomes a conflict.
+- Before a file on the device is replaced, it is copied to `files/sync/backups/<date>/` (last 40 runs kept).
+- **Game page, Save data tab** (laid out like RomM web's): sub-tabs Saves (n) / States (n), the device's sync status, saves grouped by slot ("AUTOSAVE · N versions") with every version kept on RomM, states one row each; the copy on the device is marked "On this device". Any other version can be restored (A): same rules as a restore (backup, RetroArch closed); an older save version is then uploaded again as the slot's newest, else the next sync would bring the newer one back.
+- **Game page**: a Sync button next to Download (same height as the main action; a dot on its icon for an open conflict or waiting restore) and a **Saves** tab after Media, one row per kind (status, last sync, files on the device and on RomM); a row with a conflict or a waiting restore opens it. Shown only while the sync is on.
+- **Triggers**: manual (Settings, game page); automatic for saves (app start, return to the app at most every 10 min, hourly WorkManager job); states only by hand unless turned on.
+- Standalone emulators (DuckStation, PPSSPP, Dolphin, melonDS…) are not covered.

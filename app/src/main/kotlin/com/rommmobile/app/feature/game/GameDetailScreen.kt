@@ -98,6 +98,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -233,7 +235,13 @@ fun GameDetailScreen(romId: Int, onBack: () -> Unit, onOpenGame: (Int) -> Unit, 
     val ready = (state as? GameUiState.Ready)?.rom
     // Tabs live here so L1/R1 can flip them from anywhere on the page, as on the web.
     var tab by rememberSaveable(romId) { mutableIntStateOf(0) }
-    val tabs = remember(ready?.screenshots, ready?.files) { ready?.let { detailTabs(it) } ?: listOf(DetailTab.OVERVIEW) }
+    // Saves joins the tabs once the save sync is on (Settings > Save sync).
+    val syncOn = com.rommmobile.app.feature.sync.rememberGameSyncOn(romId)
+    // Achievements joins them when the game has a RetroAchievements set.
+    val hasAchievements = rememberAchievementCount(romId) != null
+    val tabs = remember(ready?.screenshots, ready?.files, syncOn, hasAchievements) {
+        ready?.let { detailTabs(it, syncOn, hasAchievements) } ?: listOf(DetailTab.OVERVIEW)
+    }
     val tabIndex = tab.coerceIn(0, tabs.lastIndex)
 
     // v2: the game page sits on its own cover, blurred and faded into the background.
@@ -324,13 +332,18 @@ fun UninstallDialog(rom: Rom, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     }
 }
 
-enum class DetailTab(val labelRes: Int) { OVERVIEW(R.string.tab_overview), MEDIA(R.string.tab_media), FILES(R.string.tab_files) }
+enum class DetailTab(val labelRes: Int) { OVERVIEW(R.string.tab_overview), MEDIA(R.string.tab_media), FILES(R.string.tab_files), ACHIEVEMENTS(R.string.tab_achievements), SAVES(R.string.tab_saves) }
 
-/** Overview always; Media and Files only when there is something to put in them. */
-fun detailTabs(rom: Rom): List<DetailTab> = buildList {
+/**
+ * Overview always; Media and Files only when there is something to put in them; Achievements when
+ * the game has a RetroAchievements set; Save data while the sync is on. Same order as the web.
+ */
+fun detailTabs(rom: Rom, saves: Boolean = false, achievements: Boolean = false): List<DetailTab> = buildList {
     add(DetailTab.OVERVIEW)
     if (rom.screenshots.isNotEmpty()) add(DetailTab.MEDIA)
     if (rom.files.size > 1 || rom.extraFiles.isNotEmpty()) add(DetailTab.FILES)
+    if (achievements) add(DetailTab.ACHIEVEMENTS)
+    if (saves) add(DetailTab.SAVES)
 }
 
 /**
@@ -357,6 +370,8 @@ private fun DetailBody(
     val layout = RommTheme.layout
     val scroll = rememberScrollState()
     var viewer by remember { mutableStateOf<Int?>(null) }
+    // Shared by the Sync button and the Saves tab, which hands the focus back to it.
+    val syncFocus = remember { FocusRequester() }
     val covers = remember(rom.id, rom.coverLarge, rom.coverSmall) { rom.coverCandidates(preferLarge = true) }
     var ratio by remember(rom.id) { mutableFloatStateOf(CoverRatios.firstKnown(covers) ?: COVER_RATIO) }
     val cover: @Composable (Modifier) -> Unit = { m ->
@@ -386,16 +401,30 @@ private fun DetailBody(
     val body: @Composable ColumnScope.() -> Unit = {
         DetailHeader(rom, platformIcons)
         Spacer(Modifier.height(14.dp))
-        ActionRow(rom, present, progress, onDownload, onDownloadAgain, onUninstall)
+        ActionRow(rom, present, progress, onDownload, onDownloadAgain, onUninstall) { sameHeight ->
+            // Save sync, beside the download action (only once the sync is on in Settings).
+            com.rommmobile.app.feature.sync.GameSyncButton(rom.id, modifier = sameHeight, focus = syncFocus)
+            // Favourite and collections, as the web's heart and "manage collections".
+            GameCollectionButtons(rom.id, sameHeight)
+        }
         Spacer(Modifier.height(18.dp))
         if (tabs.size > 1) {
-            DetailTabs(tabs, tab, onTab)
+            // Counts beside the names, as on the web: "Achievements 12/197", "Save data 2".
+            val saveCount = if (DetailTab.SAVES in tabs) com.rommmobile.app.feature.sync.rememberSaveDataCount(rom.id) else null
+            val ach = if (DetailTab.ACHIEVEMENTS in tabs) rememberAchievementCount(rom.id) else null
+            val badges = buildMap {
+                saveCount?.let { put(DetailTab.SAVES, it.toString()) }
+                ach?.let { (e, t) -> put(DetailTab.ACHIEVEMENTS, "$e/$t") }
+            }
+            DetailTabs(tabs, tab, onTab, badges = badges)
             Spacer(Modifier.height(14.dp))
         }
         when (tabs.getOrNull(tab) ?: DetailTab.OVERVIEW) {
             DetailTab.OVERVIEW -> OverviewTab(rom, onOpenGame)
             DetailTab.MEDIA -> MediaTab(rom.screenshots, onOpen = { viewer = it })
             DetailTab.FILES -> FilesTab(rom, onDownloadFile)
+            DetailTab.ACHIEVEMENTS -> AchievementsTab(rom.id)
+            DetailTab.SAVES -> com.rommmobile.app.feature.sync.GameSavesTab(rom.id, returnFocus = syncFocus)
         }
         Spacer(Modifier.height(28.dp))
     }
@@ -537,8 +566,15 @@ private fun ActionRow(
     onDownload: () -> Unit,
     onDownloadAgain: () -> Unit,
     onUninstall: () -> Unit,
+    /** More actions after the download ones (the save sync button), given the main action's height. */
+    extra: @Composable (Modifier) -> Unit = {},
 ) {
     val colors = RommTheme.colors
+    // Every button of the row takes the height of the main action, whatever it holds (pad glyph,
+    // progress ring), so the pills line up.
+    var mainHeight by remember { mutableIntStateOf(0) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val sameHeight = if (mainHeight > 0) Modifier.height(with(density) { mainHeight.toDp() }) else Modifier
     val downloadFr = remember { FocusRequester() }
     // requestFocus() reports nothing when it fails, and in touch mode it is a no-op by design, so
     // keep asking for a few frames and stop as soon as the button itself says it has focus. Landing
@@ -556,6 +592,7 @@ private fun ActionRow(
     val emphasis = if (colors.isDark) colors.emphasis else colors.primary
     val onEmphasis = if (colors.isDark) colors.onEmphasis else Color.White
     val primaryMod = Modifier.focusRequester(downloadFr).onFocusChanged { actionFocused = it.isFocused }
+        .onSizeChanged { mainHeight = it.height }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         when {
             progress != null && !progress.state.isTerminal -> {
@@ -602,17 +639,23 @@ private fun ActionRow(
                 padButton = PadButton.X,
             )
         }
+        extra(sameHeight)
     }
 }
 
 /** Underlined tabs: 1 dp baseline, 2 dp brand indicator under the selected one. */
 @Composable
-private fun DetailTabs(tabs: List<DetailTab>, selected: Int, onSelect: (Int) -> Unit) {
+private fun DetailTabs(tabs: List<DetailTab>, selected: Int, onSelect: (Int) -> Unit, badges: Map<DetailTab, String> = emptyMap()) {
     val colors = RommTheme.colors
+    // Walking down the page crosses this row: only the open tab takes the focus from outside, so a
+    // tab is never switched just by passing through (focusing a tab opens it). Inside the row,
+    // left / right reach the others.
+    var inRow by remember { mutableStateOf(false) }
     Row(
         Modifier
             .fillMaxWidth()
             .drawBehind { drawLine(colors.borderStrong, Offset(0f, size.height - 0.5f), Offset(size.width, size.height - 0.5f), 1f) }
+            .onFocusChanged { inRow = it.hasFocus }
             .focusGroup(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -626,6 +669,7 @@ private fun DetailTabs(tabs: List<DetailTab>, selected: Int, onSelect: (Int) -> 
             val shape = RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp)
             Box(
                 Modifier
+                    .focusProperties { canFocus = sel || inRow }
                     .gamepadFocus(shape, scale = 1f, onFocused = { if (it) onSelect(i) })
                     .clip(shape)
                     .clickable { onSelect(i) }
@@ -637,12 +681,18 @@ private fun DetailTabs(tabs: List<DetailTab>, selected: Int, onSelect: (Int) -> 
                     }
                     .padding(horizontal = 16.dp, vertical = 9.dp),
             ) {
-                Text(
-                    stringResource(t.labelRes),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Medium,
-                    color = if (sel) colors.onSurface else colors.onSurfaceMuted,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(t.labelRes),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Medium,
+                        color = if (sel) colors.onSurface else colors.onSurfaceMuted,
+                    )
+                    badges[t]?.let { n ->
+                        Spacer(Modifier.width(8.dp))
+                        com.rommmobile.app.feature.sync.CountBadge(n, highlighted = sel)
+                    }
+                }
             }
         }
         if (hasPad) {

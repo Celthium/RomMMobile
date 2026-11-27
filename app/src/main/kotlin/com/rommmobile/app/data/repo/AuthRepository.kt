@@ -17,6 +17,8 @@ import com.rommmobile.app.data.api.DeviceInitBody
 import com.rommmobile.app.data.api.DeviceTokenBody
 import com.rommmobile.app.data.api.ExchangeBody
 import com.rommmobile.app.data.api.READ_SCOPES
+import com.rommmobile.app.data.api.SYNC_SCOPES
+import com.rommmobile.app.data.api.COLLECTIONS_WRITE
 import com.rommmobile.app.data.api.RommApi
 import com.rommmobile.app.data.api.UserDto
 import com.rommmobile.app.di.ApiClient
@@ -109,7 +111,17 @@ class AuthRepository @Inject constructor(
      */
     suspend fun loginWithPassword(username: String, password: String): Result<Unit> = withVerification {
         val oauth = apiCall {
-            val t = api.token(grantType = "password", username = username, password = password, scope = READ_SCOPES.joinToString(" "))
+            // The save sync's write scopes first; a role without them gets "Insufficient scope" for
+            // the whole request, so ask again with the read scopes alone.
+            val withSync = READ_SCOPES + SYNC_SCOPES + COLLECTIONS_WRITE
+            val t = try {
+                api.token(grantType = "password", username = username, password = password, scope = withSync.joinToString(" "))
+                    .also { authStore.setGrantedScopes(withSync) }
+            } catch (e: ApiException) {
+                if (e.detail?.contains("scope", ignoreCase = true) != true) throw e
+                api.token(grantType = "password", username = username, password = password, scope = READ_SCOPES.joinToString(" "))
+                    .also { authStore.setGrantedScopes(READ_SCOPES) }
+            }
             authStore.setOAuth(t.accessToken, t.refreshToken, t.expires, username)
             verifyMe()
         }
@@ -188,7 +200,10 @@ class AuthRepository @Inject constructor(
                 client = "RomMMobile",
                 platform = "android",
                 clientVersion = BuildConfig.VERSION_NAME,
-                requestedScopes = READ_SCOPES,
+                // The save sync writes saves and states and registers this device, the game page
+                // edits the user's own collections (favourites); the server only
+                // grants what the user's role allows, and the approver can untick any of them.
+                requestedScopes = READ_SCOPES + SYNC_SCOPES + COLLECTIONS_WRITE,
             )
         )
     }
@@ -198,6 +213,8 @@ class AuthRepository @Inject constructor(
         val r = apiCall { api.deviceToken(DeviceTokenBody(deviceCode)) }
         r.getOrNull()?.let { t ->
             authStore.setClientToken(t.accessToken, null)
+            authStore.setDeviceId(t.deviceId)
+            authStore.setGrantedScopes(t.scopes.takeIf { it.isNotEmpty() })
             val me = apiCall { verifyMe() }
             if (me.isFailure) { authStore.clear(); return Result.failure(me.exceptionOrNull()!!) }
             return Result.success(true)
