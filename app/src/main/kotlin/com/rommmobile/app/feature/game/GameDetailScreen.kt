@@ -271,6 +271,16 @@ fun GameDetailScreen(romId: Int, onBack: () -> Unit, onOpenGame: (Int) -> Unit, 
                         onDownloadFile = { f, label -> vm.viewModelScope.launch { vm.enqueue.enqueueFile(s.rom, f, label) } },
                     )
                 }
+                // The text scrolls on under the system bar: a fade there, so it dims away instead of
+                // being cut by the bar's edge. It belongs to the page, not to the whole screen, so
+                // the download bar below it stays on top, readable.
+                Box(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(LocalNavBarInset.current + 64.dp)
+                        .background(com.rommmobile.app.core.design.softFadeBrush(RommTheme.colors.background, RommTheme.colors.isDark)),
+                )
             }
             DownloadMiniBar(onClick = onOpenDownloads, modifier = Modifier.padding(bottom = LocalNavBarInset.current))
             // Hint bar: X downloads, LB/RB flip the tabs. The action button under the title holds the focus and says what
@@ -291,15 +301,6 @@ fun GameDetailScreen(romId: Int, onBack: () -> Unit, onOpenGame: (Int) -> Unit, 
                 }
             }
         }
-        // The text scrolls on under the system bar: a fade there, so it dims away instead of
-        // being cut by the bar's edge.
-        Box(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(LocalNavBarInset.current + 64.dp)
-                .background(com.rommmobile.app.core.design.softFadeBrush(RommTheme.colors.background, RommTheme.colors.isDark)),
-        )
     }
 
     pending?.let { p ->
