@@ -23,6 +23,14 @@ enum class WidthClass { COMPACT, MEDIUM, EXPANDED }
 enum class HeightClass { SHORT, TALL }
 enum class ScreenShape { PORTRAIT, SQUARE, LANDSCAPE }
 
+/**
+ * The user's choice of navigation (Settings > Appearance): by screen shape, or always the side
+ * rail, or always the bottom bar. A square handheld screen can suit either, depending on taste.
+ */
+enum class NavStyle { AUTO, RAIL, BOTTOM;
+    companion object { fun parse(s: String?): NavStyle = entries.firstOrNull { it.name == s } ?: AUTO }
+}
+
 /** Where the primary navigation lives, and how wide it is. */
 enum class NavMode(val railWidth: Dp, val showLabels: Boolean) {
     BOTTOM_BAR(0.dp, true),
@@ -41,6 +49,7 @@ data class LayoutClass(
     val heightDp: Int,
     val isTv: Boolean,
     val fontScale: Float,
+    val navStyle: NavStyle = NavStyle.AUTO,
 ) {
     val widthClass: WidthClass = when {
         widthDp < 600 -> WidthClass.COMPACT
@@ -69,6 +78,12 @@ data class LayoutClass(
     // the floating bottom pill everywhere else (phones, the square bottom panel of a dual-screen
     // handheld).
     val navMode: NavMode = when {
+        navStyle == NavStyle.BOTTOM -> NavMode.BOTTOM_BAR
+        navStyle == NavStyle.RAIL -> when {
+            isTv -> NavMode.RAIL_TV
+            isShort || widthDp < 600 -> NavMode.RAIL_COMPACT
+            else -> NavMode.RAIL
+        }
         isTv -> NavMode.RAIL_TV
         shape == ScreenShape.LANDSCAPE && heightClass == HeightClass.SHORT -> NavMode.RAIL_COMPACT
         shape == ScreenShape.LANDSCAPE -> NavMode.RAIL
@@ -157,7 +172,7 @@ fun ExtendUnderNavBar(content: @Composable () -> Unit) {
 val LocalLayoutClass = staticCompositionLocalOf { LayoutClass(393, 873, isTv = false, fontScale = 1f) }
 
 @Composable
-fun rememberLayoutClass(): LayoutClass {
+fun rememberLayoutClass(navStyle: NavStyle = NavStyle.AUTO): LayoutClass {
     val context = LocalContext.current
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
@@ -165,8 +180,8 @@ fun rememberLayoutClass(): LayoutClass {
     val isTv = remember(context) { context.isTelevision() }
     val widthDp = if (container.width > 0) (container.width / density.density).roundToInt() else configuration.screenWidthDp
     val heightDp = if (container.height > 0) (container.height / density.density).roundToInt() else configuration.screenHeightDp
-    return remember(widthDp, heightDp, isTv, configuration.fontScale) {
-        LayoutClass(widthDp = widthDp, heightDp = heightDp, isTv = isTv, fontScale = configuration.fontScale)
+    return remember(widthDp, heightDp, isTv, configuration.fontScale, navStyle) {
+        LayoutClass(widthDp = widthDp, heightDp = heightDp, isTv = isTv, fontScale = configuration.fontScale, navStyle = navStyle)
     }
 }
 

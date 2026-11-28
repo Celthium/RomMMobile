@@ -116,6 +116,7 @@ class SettingsViewModel @Inject constructor(
     fun setExtract7z(v: Boolean) = viewModelScope.launch { store.setAutoExtract7z(v) }
     fun setMargin(v: Int) = viewModelScope.launch { store.setScreenMargin(v) }
     fun setTheme(v: ThemeMode) = viewModelScope.launch { store.setThemeMode(v) }
+    fun setNavStyle(v: com.rommmobile.app.core.design.NavStyle) = viewModelScope.launch { store.setNavStyle(v) }
     fun setBiosPath(v: String?) = viewModelScope.launch { store.setBiosPath(v) }
     fun setAllowInsecure(v: Boolean) = viewModelScope.launch { store.setAllowInsecureRemote(v) }
     fun setRemoteUrl(v: String?) = viewModelScope.launch { serverStore.setRemoteUrl(v?.let { com.rommmobile.app.core.network.UrlNormalizer.normalize(it) }) }
@@ -221,6 +222,7 @@ fun SettingsScreen(
                 SettingsCategory.DISPLAY -> {
                     SettingsCard {
                         SettingRow(stringResource(R.string.settings_theme), subtitle = themeLabel(s.themeMode), onClick = { dialog = "theme" })
+                        SettingRow(stringResource(R.string.settings_nav_style), subtitle = navStyleLabel(s.navStyle), onClick = { dialog = "navstyle" })
                     }
                     SettingsCard {
                         SwitchRow(stringResource(R.string.settings_dual_screen), s.dualScreen, vm::setDualScreen, subtitle = stringResource(R.string.settings_dual_screen_hint))
@@ -320,6 +322,12 @@ fun SettingsScreen(
         "root" -> RootChooserDialog(preferredNames = vm.rootNames, onChosen = { vm.setRoot(it); dialog = null }, onDismiss = { dialog = null })
         "bios" -> TextInputDialog(stringResource(R.string.settings_bios_path), s.biosPath.orEmpty(), hint = "/storage/emulated/0/RetroArch/system", onDismiss = { dialog = null }) { vm.setBiosPath(it.ifBlank { null }); dialog = null }
         "concurrency" -> ChoiceDialog(stringResource(R.string.settings_concurrency), (1..5).map { it.toString() to null }, s.concurrency - 1, onDismiss = { dialog = null }) { vm.setConcurrency(it + 1); dialog = null }
+        "navstyle" -> ChoiceDialog(
+            stringResource(R.string.settings_nav_style),
+            com.rommmobile.app.core.design.NavStyle.entries.map { navStyleLabel(it) to null },
+            com.rommmobile.app.core.design.NavStyle.entries.indexOf(s.navStyle),
+            onDismiss = { dialog = null },
+        ) { vm.setNavStyle(com.rommmobile.app.core.design.NavStyle.entries[it]); dialog = null }
         "theme" -> ChoiceDialog(stringResource(R.string.settings_theme), ThemeMode.entries.map { themeLabel(it) to null }, ThemeMode.entries.indexOf(s.themeMode), onDismiss = { dialog = null }) { vm.setTheme(ThemeMode.entries[it]); dialog = null }
         "perplatform" -> PerPlatformDialog(vm, s, onDismiss = { dialog = null })
         "rerun" -> RommDialog(onDismissRequest = { dialog = null }, title = stringResource(R.string.settings_rerun_onboarding), confirmText = stringResource(R.string.action_continue), onConfirm = { dialog = null; vm.resetOnboarding(); onRerunOnboarding() }, focusConfirm = false) {
@@ -327,6 +335,15 @@ fun SettingsScreen(
         }
     }
 }
+
+@Composable
+fun navStyleLabel(style: com.rommmobile.app.core.design.NavStyle): String = stringResource(
+    when (style) {
+        com.rommmobile.app.core.design.NavStyle.AUTO -> R.string.nav_style_auto
+        com.rommmobile.app.core.design.NavStyle.RAIL -> R.string.nav_style_rail
+        com.rommmobile.app.core.design.NavStyle.BOTTOM -> R.string.nav_style_bottom
+    },
+)
 
 @Composable
 fun themeLabel(mode: ThemeMode): String = when (mode) {

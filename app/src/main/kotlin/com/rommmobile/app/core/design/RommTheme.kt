@@ -43,6 +43,7 @@ object RommTheme {
 fun RommTheme(
     themeMode: ThemeMode,
     screenMarginDp: Int = 0,
+    navStyle: NavStyle = NavStyle.AUTO,
     content: @Composable () -> Unit,
 ) {
     val dark = when (themeMode) {
@@ -51,7 +52,7 @@ fun RommTheme(
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
     }
     val colors = if (dark) DarkRommColors else LightRommColors
-    val layout = rememberLayoutClass()
+    val layout = rememberLayoutClass(navStyle)
     // The user "screen margin" is no longer applied: padding the whole app also pushed the side
     // panel off the edge, and the edge-to-edge layout already keeps clear of system bars and
     // cutouts. Only a TV keeps its automatic overscan inset.

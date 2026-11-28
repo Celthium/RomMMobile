@@ -527,4 +527,8 @@
     <string name="dual_stat_states">Stati</string>
     <string name="dual_stat_screenshots">Screenshot</string>
     <string name="dual_stats_hint">Seleziona una piattaforma o un gioco per vederlo qui</string>
+    <string name="settings_nav_style">Navigazione</string>
+    <string name="nav_style_auto">Automatica (in base alla forma dello schermo)</string>
+    <string name="nav_style_rail">Barra laterale</string>
+    <string name="nav_style_bottom">Barra in basso</string>
 </resources>

@@ -88,7 +88,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themeMode by settings.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.DARK)
             val screenMargin by settings.screenMarginDp.collectAsStateWithLifecycle(initialValue = 0)
-            RommTheme(themeMode = themeMode, screenMarginDp = screenMargin) {
+            val navStyle by settings.navStyle.collectAsStateWithLifecycle(initialValue = com.rommmobile.app.core.design.NavStyle.AUTO)
+            RommTheme(themeMode = themeMode, screenMarginDp = screenMargin, navStyle = navStyle) {
                 ProvideDualScreen(dualScreen) {
                     RomMRoot(intentEpoch = pendingIntentEpoch.intValue)
                 }

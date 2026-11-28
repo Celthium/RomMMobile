@@ -546,4 +546,8 @@
     <string name="dual_stat_states">États</string>
     <string name="dual_stat_screenshots">Captures</string>
     <string name="dual_stats_hint">Sélectionnez une plateforme ou un jeu pour l’afficher ici</string>
+    <string name="settings_nav_style">Navigation</string>
+    <string name="nav_style_auto">Automatique (selon la forme de l’écran)</string>
+    <string name="nav_style_rail">Rail latéral</string>
+    <string name="nav_style_bottom">Barre en bas</string>
 </resources>

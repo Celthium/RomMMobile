@@ -541,4 +541,8 @@
     <string name="dual_stat_states">States</string>
     <string name="dual_stat_screenshots">Screenshots</string>
     <string name="dual_stats_hint">Select a platform or a game to see it here</string>
+    <string name="settings_nav_style">Navigation</string>
+    <string name="nav_style_auto">Automatic (by screen shape)</string>
+    <string name="nav_style_rail">Side rail</string>
+    <string name="nav_style_bottom">Bottom bar</string>
 </resources>

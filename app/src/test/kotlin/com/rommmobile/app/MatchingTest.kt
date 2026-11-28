@@ -3,6 +3,7 @@ package com.rommmobile.app
 import com.google.common.truth.Truth.assertThat
 import com.rommmobile.app.core.design.HeightClass
 import com.rommmobile.app.core.design.LayoutClass
+import com.rommmobile.app.core.design.NavStyle
 import com.rommmobile.app.core.design.NavMode
 import com.rommmobile.app.core.design.ScreenShape
 import com.rommmobile.app.core.design.WidthClass
@@ -29,13 +30,25 @@ class MatchingTest {
     }
 
     @Test
-    fun `retroid pocket classic is compact but short and uses the rail`() {
+    fun `square short screen uses the bottom bar by default and the rail on request`() {
+        // Retroid Pocket Classic class (the AYN Thor's bottom screen is the same shape).
         val rp = LayoutClass(widthDp = 472, heightDp = 411, isTv = false, fontScale = 1f)
         assertThat(rp.widthClass).isEqualTo(WidthClass.COMPACT)
         assertThat(rp.heightClass).isEqualTo(HeightClass.SHORT)
         assertThat(rp.shape).isEqualTo(ScreenShape.SQUARE)
-        assertThat(rp.navMode).isEqualTo(NavMode.RAIL_COMPACT)
-        assertThat(rp.topBarHeight.value).isEqualTo(40f)
+        assertThat(rp.navMode).isEqualTo(NavMode.BOTTOM_BAR)
+        assertThat(rp.topBarHeight.value).isEqualTo(36f)
+        val rail = rp.copy(navStyle = NavStyle.RAIL)
+        assertThat(rail.navMode).isEqualTo(NavMode.RAIL_COMPACT)
+    }
+
+    @Test
+    fun `navigation setting overrides the screen shape`() {
+        val handheld = LayoutClass(833, 468, isTv = false, fontScale = 1f)
+        assertThat(handheld.navMode).isEqualTo(NavMode.RAIL_COMPACT)
+        assertThat(handheld.copy(navStyle = NavStyle.BOTTOM).navMode).isEqualTo(NavMode.BOTTOM_BAR)
+        val dock = LayoutClass(1280, 800, isTv = false, fontScale = 1f, navStyle = NavStyle.RAIL)
+        assertThat(dock.navMode).isEqualTo(NavMode.RAIL)
     }
 
     @Test
