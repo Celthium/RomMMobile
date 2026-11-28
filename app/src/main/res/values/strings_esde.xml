@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="esde_export">Export media and metadata to ES-DE</string>
+    <string name="esde_export_hint">After each download, writes the cover, screenshot, logo, clip and gamelist.xml entry, so ES-DE shows the game without scraping. Files already there are never replaced.</string>
+    <string name="esde_dir">ES-DE folder</string>
+    <string name="esde_dir_auto_short">found automatically</string>
+    <string name="esde_dir_not_found">Not found: no ES-DE/settings/es_settings.xml on this device</string>
+    <string name="esde_dir_no_access">All files access is needed to reach ES-DE\'s folder</string>
+    <string name="esde_dir_auto">Find automatically</string>
+    <string name="esde_dir_auto_hint">ES-DE/ at the root of the internal memory or of an SD card</string>
+    <string name="esde_dir_pick">Choose the folder…</string>
+    <string name="esde_dir_type">Type a path</string>
+    <string name="esde_dir_grant">Allow all files access</string>
+    <string name="esde_dir_grant_hint">Opens Android\'s settings for this app</string>
+    <string name="esde_media_dir">Media folder</string>
+    <string name="esde_media_dir_unsupported">ES-DE\'s media folder (%1$s) cannot be written by this app: only gamelist.xml is exported</string>
+    <string name="esde_legacy_gamelists">ES-DE keeps its gamelists in the ROM folders (legacy option): gamelist.xml is not written</string>
+    <string name="esde_media_cover">Cover</string>
+    <string name="esde_media_screenshot">Screenshot</string>
+    <string name="esde_media_marquee">Logo</string>
+    <string name="esde_media_marquee_hint">ES-DE\'s marquee: the game\'s title as a transparent image</string>
+    <string name="esde_media_video">Video</string>
+    <string name="esde_media_video_hint">Several MB per game</string>
+    <string name="esde_media_metadata">Metadata</string>
+    <string name="esde_media_metadata_hint">Name, description, date, developer, genre, players and rating in gamelist.xml. Existing entries only get the fields they lack.</string>
+    <string name="esde_catch_up">Export for games already on the device</string>
+    <string name="esde_catch_up_hint">Writes what is missing for every game in the ROM folders</string>
+    <string name="esde_catch_up_running">Exporting… %1$d / %2$d</string>
+    <string name="esde_catch_up_result">%1$d games · %2$d media · gamelist: %3$d added, %4$d completed</string>
+    <string name="esde_catch_up_errors">%1$d errors (see Diagnostics)</string>
+    <string name="esde_catch_up_body">Close ES-DE first (quit it from its menu). ES-DE keeps its own copy of the games it already lists and may write it back over these entries if it is running. Media and entries already present are kept. Restart ES-DE afterwards to see the result.</string>
+</resources>

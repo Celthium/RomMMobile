@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="esde_export">Esporta media e metadati in ES-DE</string>
+    <string name="esde_export_hint">Dopo ogni download scrive copertina, screenshot, logo, video e voce di gamelist.xml: ES-DE mostra il gioco senza scraping. Un file già presente non viene mai sostituito.</string>
+    <string name="esde_dir">Cartella ES-DE</string>
+    <string name="esde_dir_auto_short">trovata automaticamente</string>
+    <string name="esde_dir_not_found">Non trovata: nessun ES-DE/settings/es_settings.xml sul dispositivo</string>
+    <string name="esde_dir_no_access">Serve l\'accesso a tutti i file per raggiungere la cartella di ES-DE</string>
+    <string name="esde_dir_auto">Trova automaticamente</string>
+    <string name="esde_dir_auto_hint">ES-DE/ nella radice della memoria interna o di una scheda SD</string>
+    <string name="esde_dir_pick">Scegli la cartella…</string>
+    <string name="esde_dir_type">Inserisci un percorso</string>
+    <string name="esde_dir_grant">Consenti l\'accesso a tutti i file</string>
+    <string name="esde_dir_grant_hint">Apre le impostazioni Android dell\'app</string>
+    <string name="esde_media_dir">Cartella dei media</string>
+    <string name="esde_media_dir_unsupported">La cartella dei media di ES-DE (%1$s) non è scrivibile da questa app: viene esportato solo gamelist.xml</string>
+    <string name="esde_legacy_gamelists">ES-DE tiene le gamelist nelle cartelle delle ROM (opzione legacy): gamelist.xml non viene scritto</string>
+    <string name="esde_media_cover">Copertina</string>
+    <string name="esde_media_screenshot">Screenshot</string>
+    <string name="esde_media_marquee">Logo</string>
+    <string name="esde_media_marquee_hint">Il «marquee» di ES-DE: il titolo del gioco come immagine trasparente</string>
+    <string name="esde_media_video">Video</string>
+    <string name="esde_media_video_hint">Diversi MB per gioco</string>
+    <string name="esde_media_metadata">Metadati</string>
+    <string name="esde_media_metadata_hint">Nome, descrizione, data, sviluppatore, genere, giocatori e voto in gamelist.xml. Una voce esistente riceve solo i campi che le mancano.</string>
+    <string name="esde_catch_up">Esporta per i giochi già presenti</string>
+    <string name="esde_catch_up_hint">Scrive ciò che manca per ogni gioco nelle cartelle delle ROM</string>
+    <string name="esde_catch_up_running">Esportazione… %1$d / %2$d</string>
+    <string name="esde_catch_up_result">%1$d giochi · %2$d media · gamelist: %3$d aggiunte, %4$d completate</string>
+    <string name="esde_catch_up_errors">%1$d errori (vedi Diagnostica)</string>
+    <string name="esde_catch_up_body">Chiudi prima ES-DE (esci dal suo menu). ES-DE tiene una propria copia dei giochi che già elenca e può riscriverla sopra queste voci se è in esecuzione. Media e voci già presenti vengono conservati. Riavvia ES-DE dopo per vedere il risultato.</string>
+</resources>

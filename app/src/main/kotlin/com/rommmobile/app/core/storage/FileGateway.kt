@@ -2,6 +2,7 @@ package com.rommmobile.app.core.storage
 
 import android.content.Context
 import java.io.File
+import java.io.InputStream
 import java.io.OutputStream
 
 data class FileInfo(
@@ -24,6 +25,14 @@ interface FileGateway {
     fun listDirs(relDir: String): List<String> = list(relDir).filter { it.isDirectory }.map { it.name }
     fun ensureDir(relDir: String): Boolean
     fun openOutput(relDir: String, name: String): OutputStream
+    /** Reads an existing file; null when there is none. */
+    fun openInput(relDir: String, name: String): InputStream?
+    /**
+     * Publishes [tmpName] (already complete, same directory) as [name], replacing any previous
+     * [name]. Atomic where the storage allows it (a plain rename); never leaves [name] missing
+     * if the swap fails half-way.
+     */
+    fun replaceFile(relDir: String, tmpName: String, name: String): Boolean
     /** Moves a private temp file into place. Verified by size afterwards, never trusted blindly. */
     fun moveIn(src: File, relDir: String, name: String): Boolean
     fun delete(relDir: String, name: String): Boolean
