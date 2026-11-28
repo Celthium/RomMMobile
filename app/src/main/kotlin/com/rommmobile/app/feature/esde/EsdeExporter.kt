@@ -73,7 +73,7 @@ private data class GameResult(val media: Int, val entries: List<GamelistEntry>, 
 
 /**
  * Writes the media and the `gamelist.xml` entry ES-DE would otherwise have to scrape, from what
- * RomM already knows about the game. Only while the launcher is ES-DE and the export is on.
+ * RomM already knows about the game. Only while the launcher is ES-DE (or Cocoon) and the export is on.
  *
  * Never overwrites: a media file that exists under any extension ES-DE reads is left alone, and a
  * gamelist entry that exists only gets the fields it lacks ([GamelistXml]). A failure here never
@@ -143,7 +143,7 @@ class EsdeExporter @Inject constructor(
         EsdeStatus.Ready(target)
     }
 
-    private suspend fun active(): Boolean = settings.launcher.first() == Launcher.ESDE && prefs.snapshot().anything
+    private suspend fun active(): Boolean = usesEsdeLayout(settings.launcher.first()) && prefs.snapshot().anything
 
     /* ---------------- after a download ---------------- */
 
@@ -264,7 +264,11 @@ class EsdeExporter @Inject constructor(
                     }
                 }
             }
-            return if (total > 0) ext else null
+            if (total <= 0) return null
+            // RomM names some PNG screenshots `.jpg` and the server types them by name: trust the bytes.
+            val head = ByteArray(16)
+            val n = dest.inputStream().use { it.read(head) }
+            return sniffExtension(head.copyOf(n.coerceAtLeast(0)), video) ?: ext
         }
     }
 
@@ -388,10 +392,9 @@ class EsdeExporter @Inject constructor(
         rom.summary?.let { put("desc", it) }
         EsdeMeta.rating(rom.rating)?.let { put("rating", it) }
         EsdeMeta.releaseDate(rom.firstReleaseDate)?.let { put("releasedate", it) }
-        // RomM keeps one list of companies, without roles: the first is usually the developer,
-        // the second the publisher (IGDB order). [à vérifier] on a few games.
-        rom.companies.getOrNull(0)?.let { put("developer", it) }
-        rom.companies.getOrNull(1)?.let { put("publisher", it) }
+        // RomM keeps one list of companies without their roles (Astro Boy: "SEGA, THQ", both
+        // publishers, the developer Treasure absent): naming one of them developer would be a guess.
+        rom.companies.takeIf { it.isNotEmpty() }?.let { put("publisher", it.take(2).joinToString(", ")) }
         rom.genres.takeIf { it.isNotEmpty() }?.let { put("genre", it.joinToString(", ")) }
         EsdeMeta.players(rom.players)?.let { put("players", it) }
     }.filterValues { it.isNotBlank() }
@@ -408,6 +411,22 @@ class EsdeExporter @Inject constructor(
         /** Same order as ES-DE's `sImageExtensions` / `sVideoExtensions` (FileData.h). */
         val IMAGE_EXTS = listOf(".png", ".jpg", ".webp")
         val VIDEO_EXTS = listOf(".mp4", ".mkv", ".avi", ".wmv", ".mov", ".webm", ".m4v")
+
+        /** Format from the file's first bytes; null when not recognised. */
+        fun sniffExtension(head: ByteArray, video: Boolean): String? {
+            fun at(i: Int, vararg b: Int) = head.size >= i + b.size && b.indices.all { head[i + it] == b[it].toByte() }
+            return if (!video) when {
+                at(0, 0x89, 0x50, 0x4E, 0x47) -> ".png"
+                at(0, 0xFF, 0xD8, 0xFF) -> ".jpg"
+                at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50) -> ".webp"
+                else -> null
+            } else when {
+                at(4, 0x66, 0x74, 0x79, 0x70) -> ".mp4"
+                at(0, 0x1A, 0x45, 0xDF, 0xA3) -> null // Matroska or WebM: keep what the server said
+                at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x41, 0x56, 0x49) -> ".avi"
+                else -> null
+            }
+        }
 
         /** Extension from the server's Content-Type, else from the URL; null when ES-DE cannot read it. */
         fun extensionFor(contentType: String?, url: String, video: Boolean): String? {
@@ -431,6 +450,9 @@ class EsdeExporter @Inject constructor(
         }
     }
 }
+
+/** ES-DE itself, and Cocoon, which reads ES-DE's folders, gamelists and media. */
+fun usesEsdeLayout(launcher: Launcher): Boolean = launcher == Launcher.ESDE || launcher == Launcher.COCOON
 
 /** Reads values out of ES-DE's `settings/es_settings.xml` (`<string name="X" value="..." />`). */
 object EsdeSettingsFile {

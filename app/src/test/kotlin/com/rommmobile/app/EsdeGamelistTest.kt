@@ -169,6 +169,18 @@ class EsdeGamelistTest {
         assertThat(EsdeExporter.extensionFor("video/mp4", "http://x/a", video = false)).isNull()
     }
 
+    @Test fun `media format from the first bytes`() {
+        val png = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+        val jpg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
+        val webp = "RIFF\u0000\u0000\u0000\u0000WEBPVP8 ".toByteArray(Charsets.ISO_8859_1)
+        val mp4 = byteArrayOf(0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6F, 0x6D)
+        assertThat(EsdeExporter.sniffExtension(png, video = false)).isEqualTo(".png")
+        assertThat(EsdeExporter.sniffExtension(jpg, video = false)).isEqualTo(".jpg")
+        assertThat(EsdeExporter.sniffExtension(webp, video = false)).isEqualTo(".webp")
+        assertThat(EsdeExporter.sniffExtension(mp4, video = true)).isEqualTo(".mp4")
+        assertThat(EsdeExporter.sniffExtension(byteArrayOf(1, 2), video = false)).isNull()
+    }
+
     @Test fun `es_settings values`() {
         val xml = """<?xml version="1.0"?>
 <bool name="LegacyGamelistFileLocation" value="true" />

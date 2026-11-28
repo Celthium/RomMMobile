@@ -97,15 +97,19 @@ File in `app/src/main/assets/platform_map.json` (copy in `assets/` of this repo)
 5. **Duplicates**: if a file with the same name (or the extracted or compressed version of the same name) already exists, the download is marked "already on the device" and skipped, with the option to force it.
 6. **BIOS/firmware**: separate section. Source `GET /api/firmware`, destination **`RetroArch/system/`** (configurable path), not the platform folders. Users typically already have a complete BIOS pack for RetroArch: the feature only serves to fill the gaps, so never overwrite an existing file without asking.
 
-## 6. Metadata for the frontend (post-v1, milestone M4)
+## 6. Metadata for the frontend (ES-DE export)
 
 No Android frontend exposes an API to register a game. The universal contract is: **a file with the right extension in the watched folder, plus a new scan by the frontend**. ES-DE rescans at every launch.
 
-To go further (covers and descriptions without making the frontend scrape) the reference format is the **ES-DE** one, because Cocoon imports it and iiSU can read it:
+When the launcher is **ES-DE or Cocoon**, each finished ROM download also writes what ES-DE would otherwise scrape, from what RomM already has (`feature/esde/`). Settings > Launcher and folders turns it on or off per media (video off by default) and offers **Export for games already on the device**. Formats checked against ES-DE's source (`FileData.cpp`, `GamelistFileParser.cpp`, `MetaData.cpp`, master, 2026-11):
 
-- `ES-DE/gamelists/<system>/gamelist.xml` — `<game>` entries with `<path>`, `<name>`, `<desc>`, `<releasedate>`, `<developer>`, `<publisher>`, `<genre>`, `<image>`.
-- `ES-DE/downloaded_media/<system>/covers/<ROM file name>.jpg` and `screenshots/`, association **by ROM file name**.
-- **Write `gamelist.xml` only while ES-DE is closed** and always with an atomic write (temporary file plus rename), merging the existing entries instead of overwriting the file.
+- ES-DE's data folder: `<volume>/ES-DE` holding `settings/es_settings.xml`, or chosen by hand (path or SAF tree). Media go to `MediaDirectory` from `es_settings.xml` when set, else `ES-DE/downloaded_media`.
+- Media: `downloaded_media/<system>/{covers,screenshots,marquees,videos}/<ROM sub-folders>/<ROM name without extension>.<ext>`. Images `.png`/`.jpg`/`.webp`, videos `.mp4`/`.mkv`/`.avi`/`.wmv`/`.mov`/`.webm`/`.m4v`, the extension taken from the file's first bytes (RomM serves some PNG screenshots as `.jpg`). `<system>` is the platform folder's name (ES-DE system name = folder in `%ROMPATH%`). Sources: `path_cover_large` → `url_cover`, first `merged_screenshots`, `ss_metadata.logo_path` (marquee), `path_video`. A game in its own folder (`psx/Game/`) also gets the folder's pictures.
+- `gamelists/<system>/gamelist.xml`: `<game>` with `<path>./file</path>`, `name`, `desc`, `rating` (0-1, from RomM's 0-10), `releasedate` (`YYYYMMDDT000000`), `publisher` (RomM's companies, no roles: no `developer` is guessed), `genre`, `players`. A `<folder>` entry for a game in its own folder.
+- **Never overwrite**: a media file present under any extension ES-DE reads is skipped; an existing entry only gets the fields it lacks (absent or blank); nothing is removed. ES-DE writes `<alternativeEmulator>` before `<gameList>` (two top-level elements, valid for pugixml only): both are read and written back in place. A file that does not parse is left alone.
+- **Atomic write**: hidden temp file `.gamelist.xml.rommtmp`, read back and checked (parses, no entry lost), then renamed over `gamelist.xml` (SAF: old file set aside, renamed back on failure).
+- **ES-DE running**: ES-DE re-reads `gamelist.xml` before saving and only rewrites the games it changed itself (`SaveGamelistsMode` = `always` by default). An entry for a freshly downloaded game, unknown to ES-DE, therefore survives. A game ES-DE already lists (catch-up while it is open) is rewritten from ES-DE's own copy the next time ES-DE saves that game (after playing it, say), losing the added fields. Android does not let the app see whether ES-DE is running, so the catch-up dialog asks to quit ES-DE first. ES-DE shows new entries after a restart.
+- Not handled: `LegacyGamelistFileLocation` (gamelists in the ROM folders) — the settings say so and gamelists are not written; `MediaDirectory` with `~` or `%ESPATH%`; miximages, 3D boxes, title screens.
 
 ## Extras next to a game
 
