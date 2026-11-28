@@ -3,12 +3,15 @@ name: Release
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 jobs:
   build-and-upload:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || format('dev-{0}', github.sha) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -66,10 +69,18 @@ jobs:
         run: |
           SRC=$(find app/build/outputs/apk/release -name '*.apk' | head -n 1)
           if [ -z "$SRC" ]; then echo "::error::No release APK found"; exit 1; fi
-          cp "$SRC" "RomMMobile-${{ github.event.release.tag_name }}.apk"
+          cp "$SRC" "RomMMobile-${VERSION}.apk"
+
+      - name: Save APK as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RomMMobile-${{ env.VERSION }}
+          path: RomMMobile-${{ env.VERSION }}.apk
+          if-no-files-found: error
 
       - name: Upload artifact to release
+        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: RomMMobile-${{ github.event.release.tag_name }}.apk
+          files: RomMMobile-${{ env.VERSION }}.apk
           fail_on_unmatched_files: true
