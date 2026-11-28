@@ -36,6 +36,7 @@ jobs:
       # app/build.gradle.kts reads `releaseSigning=<file>` from local.properties.
       # Without the KEYSTORE_* secrets the APK is signed with the debug key.
       - name: Configure release signing
+        id: signing
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -43,9 +44,11 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::warning::No KEYSTORE_BASE64 secret: the APK will be signed with the DEBUG key."
+            echo "::warning::No KEYSTORE_BASE64 secret: the APK will be signed with the DEBUG key and not attached to the release."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          echo "signed=true" >> "$GITHUB_OUTPUT"
           KEYSTORE="$RUNNER_TEMP/release.keystore"
           PROPS="$RUNNER_TEMP/signing.properties"
           echo "$KEYSTORE_BASE64" | base64 -d > "$KEYSTORE"
@@ -78,8 +81,10 @@ jobs:
           path: RomMMobile-${{ env.VERSION }}.apk
           if-no-files-found: error
 
+      # Only a release-key APK goes on the release: a debug-signed one next to it could be picked
+      # by Obtainium and would not install over the app already on the device.
       - name: Upload artifact to release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' && steps.signing.outputs.signed == 'true'
         uses: softprops/action-gh-release@v3
         with:
           files: RomMMobile-${{ env.VERSION }}.apk
