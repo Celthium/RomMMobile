@@ -803,7 +803,7 @@ private fun KeyHintBarImpl(modifier: Modifier, content: @Composable () -> Unit) 
                 }
         // The top padding is the fade's run-up: drawn inside the bar (outside it was clipped), so
         // the bar reaches that far above the hints, which then sit on the dark end of the curve.
-        }.padding(start = RommTheme.layout.margin, end = RommTheme.layout.margin, top = 84.dp, bottom = 4.dp),
+        }.padding(start = RommTheme.layout.margin, end = RommTheme.layout.margin, top = 68.dp, bottom = 4.dp),
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -875,20 +875,17 @@ fun PadText(
 
 
 /**
- * The one bottom fade (hint bar, bottom nav, setup's Next bar, foot of the game page). Neutral
- * rather than the page colour itself: at 80 % the page's blue-violet tint read as a violet band
- * over bright covers. And it rises gently, almost nothing over the top third, instead of
- * reaching 80 % a third of the way up.
+ * The one bottom fade (hint bar, bottom nav, setup's Next bar, foot of the game page), in the
+ * page's background colour. It rises gently, almost nothing over its top fifth, and stops short
+ * of opaque so the covers still show faintly behind the hints.
  */
 fun softFadeBrush(background: Color, dark: Boolean): Brush {
-    val shade = if (dark) androidx.compose.ui.graphics.lerp(background, Color.Black, 0.6f) else background
+    // The page's own colour, so the fade melts into the background rather than into black.
     return Brush.verticalGradient(
-        // Soft at the top, dark early enough that whatever sits in the lower half (the hints)
-        // reads on a near-solid ground.
-        0f to shade.copy(alpha = 0f),
-        0.18f to shade.copy(alpha = 0.22f),
-        0.36f to shade.copy(alpha = 0.66f),
-        0.52f to shade.copy(alpha = 0.9f),
-        1f to shade.copy(alpha = 0.97f),
+        0f to background.copy(alpha = 0f),
+        0.2f to background.copy(alpha = 0.18f),
+        0.4f to background.copy(alpha = 0.55f),
+        0.6f to background.copy(alpha = 0.8f),
+        1f to background.copy(alpha = 0.92f),
     )
 }

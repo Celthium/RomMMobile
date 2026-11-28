@@ -1,5 +1,7 @@
 package com.rommmobile.app.feature.settings
 
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import com.rommmobile.app.core.design.PillShape
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Tune
@@ -165,7 +167,9 @@ fun SettingsScreen(
             else -> false
         }
     }
-    val wide = layout.navMode != com.rommmobile.app.core.design.NavMode.BOTTOM_BAR
+    // By the screen's shape, not the navigation style: a landscape screen keeps the category
+    // sidebar even when the user put the app's navigation at the bottom.
+    val wide = layout.shape == com.rommmobile.app.core.design.ScreenShape.LANDSCAPE
     val otherScreen = remember { hasSecondScreen(context) }
 
     val content: @Composable () -> Unit = {
@@ -274,20 +278,28 @@ fun SettingsScreen(
                 Box(Modifier.weight(1f).fillMaxHeight()) { content() }
             }
         } else {
+            val hasPad by com.rommmobile.app.core.input.rememberHasGamepad()
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = layout.margin, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                // LB / RB step through the categories (handled above); say so, as on a game page.
+                if (hasPad) com.rommmobile.app.core.design.KeycapGlyph("LB", Modifier.padding(end = 4.dp))
                 categories.forEach { c ->
                     val selected = c == category
+                    // LB / RB can land on a tab scrolled out of the row: bring it back into view.
+                    val inView = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+                    LaunchedEffect(selected) { if (selected) inView.bringIntoView() }
                     Text(
                         stringResource(c.label),
                         style = MaterialTheme.typography.labelLarge,
                         color = if (selected) colors.white else colors.onSurface,
-                        modifier = Modifier.gamepadFocusRing(PillShape).clip(PillShape).background(if (selected) colors.primary else colors.surface)
+                        modifier = Modifier.bringIntoViewRequester(inView).gamepadFocusRing(PillShape).clip(PillShape).background(if (selected) colors.primary else colors.surface)
                             .clickable { category = c }.padding(horizontal = 12.dp, vertical = 6.dp),
                     )
                 }
+                if (hasPad) com.rommmobile.app.core.design.KeycapGlyph("RB", Modifier.padding(start = 4.dp))
             }
             Box(Modifier.weight(1f).fillMaxWidth()) { content() }
         }

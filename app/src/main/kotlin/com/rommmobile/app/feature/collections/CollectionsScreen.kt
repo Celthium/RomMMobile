@@ -1,5 +1,6 @@
 package com.rommmobile.app.feature.collections
 
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import com.rommmobile.app.core.design.bottomOverlayPadding
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.shadow
@@ -168,12 +169,16 @@ fun CollectionsScreen(onOpenLibrary: (LibraryRoute) -> Unit) {
             if (hasPad) com.rommmobile.app.core.design.KeycapGlyph("LB", Modifier.padding(end = 4.dp))
             CollectionTab.entries.forEach { t ->
                 val selected = t == tab
+                // LB / RB can land on a tab scrolled out of the row: bring it back into view.
+                val inView = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+                LaunchedEffect(selected) { if (selected) inView.bringIntoView() }
                 Text(
                     stringResource(t.labelRes),
                     style = MaterialTheme.typography.labelLarge,
                     // v2 pill tabs: the active one is the white "emphasis" pill, like the nav.
                     color = if (selected) colors.onEmphasis else colors.onSurfaceSecondary,
                     modifier = Modifier
+                        .bringIntoViewRequester(inView)
                         .gamepadFocusRing(PillShape)
                         .clip(PillShape)
                         .background(if (selected) colors.emphasis else colors.surface)
