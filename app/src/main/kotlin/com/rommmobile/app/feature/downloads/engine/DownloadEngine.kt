@@ -53,6 +53,7 @@ class DownloadEngine @Inject constructor(
     private val serverStore: com.rommmobile.app.core.network.ServerStore,
     private val log: FileLogger,
     @ApplicationScope private val scope: CoroutineScope,
+    private val esde: com.rommmobile.app.feature.esde.EsdeExporter,
 ) {
     private val _progress = MutableStateFlow<Map<Long, DownloadProgress>>(emptyMap())
     val progress: StateFlow<Map<Long, DownloadProgress>> = _progress.asStateFlow()
@@ -162,7 +163,7 @@ class DownloadEngine @Inject constructor(
     }
 
     private fun launchTask(entity: DownloadEntity) {
-        val task = DownloadTask(context, client, serverStore, dao, mapping, localLibrary, log) { p -> _progress.update { it + (p.id to p) } }
+        val task = DownloadTask(context, client, serverStore, dao, mapping, localLibrary, log, { p -> _progress.update { it + (p.id to p) } }, esde::onPlaced)
         val job = scope.launch(Dispatchers.IO) {
             val outcome = task.run(entity)
             handleOutcome(entity, outcome)

@@ -193,6 +193,8 @@ fun SettingsScreen(
                         SettingRow(stringResource(R.string.settings_root), subtitle = s.storageRoot?.displayName ?: stringResource(R.string.settings_not_set), onClick = { dialog = "root" })
                         SettingRow(stringResource(R.string.settings_mappings), subtitle = stringResource(R.string.settings_mappings_hint), onClick = onOpenMappings)
                     }
+                    // Covers, screenshots, logos and gamelist.xml written for ES-DE: only ES-DE (and Cocoon) read them.
+                    if (com.rommmobile.app.feature.esde.usesEsdeLayout(s.launcher)) com.rommmobile.app.feature.esde.EsdeSettingsSection(card = { inner -> SettingsCard(inner) })
                     SettingsCard {
                         SettingRow(stringResource(R.string.settings_local_library), subtitle = stringResource(R.string.settings_local_library_hint), onClick = onOpenLocalLibrary)
                         SettingRow(stringResource(R.string.settings_rescan), subtitle = stringResource(R.string.settings_rescan_hint), onClick = { vm.rescan() })

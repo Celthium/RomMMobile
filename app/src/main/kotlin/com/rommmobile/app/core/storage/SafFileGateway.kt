@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import java.io.File
 import java.io.FileNotFoundException
+import java.io.InputStream
 import java.io.OutputStream
 
 /**
@@ -97,6 +98,34 @@ class SafFileGateway(private val context: Context, override val root: StorageRoo
         return resolver.openOutputStream(fileUri, "w") ?: throw FileNotFoundException("Cannot open $name for writing")
     }
 
+    override fun openInput(relDir: String, name: String): InputStream? {
+        val child = childByName(relDir, name)?.takeIf { !it.isDir } ?: return null
+        return resolver.openInputStream(DocumentsContract.buildDocumentUriUsingTree(treeUri, child.docId))
+    }
+
+    /**
+     * SAF has no rename-over: the old file steps aside under a hidden name first, the new one
+     * takes its name, then the old one goes. If the second rename fails the old one comes back.
+     */
+    override fun replaceFile(relDir: String, tmpName: String, name: String): Boolean {
+        val tmp = childByName(relDir, tmpName) ?: return false
+        val old = childByName(relDir, name)
+        val asideName = ".$name.rommold"
+        if (old != null) {
+            runCatching { delete(relDir, asideName) }
+            runCatching { DocumentsContract.renameDocument(resolver, DocumentsContract.buildDocumentUriUsingTree(treeUri, old.docId), asideName) }
+            if (childByName(relDir, name) != null) return false
+        }
+        runCatching { DocumentsContract.renameDocument(resolver, DocumentsContract.buildDocumentUriUsingTree(treeUri, tmp.docId), name) }
+        val ok = childByName(relDir, name) != null
+        if (old != null) {
+            val aside = childByName(relDir, asideName)
+            if (ok) aside?.let { runCatching { DocumentsContract.deleteDocument(resolver, DocumentsContract.buildDocumentUriUsingTree(treeUri, it.docId)) } }
+            else aside?.let { runCatching { DocumentsContract.renameDocument(resolver, DocumentsContract.buildDocumentUriUsingTree(treeUri, it.docId), name) } }
+        }
+        return ok
+    }
+
     /**
      * The frontend must never see a half-written ROM, so the copy goes to a hidden temp name
      * and only a rename (cheap, atomic for the provider) publishes the final name. Writing
@@ -180,6 +209,11 @@ class SafFileGateway(private val context: Context, override val root: StorageRoo
         "zip" -> "application/zip"
         "7z" -> "application/x-7z-compressed"
         "txt", "m3u", "cue" -> "text/plain"
+        "xml" -> "text/xml"
+        "png" -> "image/png"
+        "jpg", "jpeg" -> "image/jpeg"
+        "webp" -> "image/webp"
+        "mp4" -> "video/mp4"
         else -> "application/octet-stream"
     }
 }

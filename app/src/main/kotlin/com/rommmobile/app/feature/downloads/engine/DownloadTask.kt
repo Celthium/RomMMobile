@@ -48,6 +48,8 @@ class DownloadTask(
     private val localLibrary: LocalLibraryRepository,
     private val log: FileLogger,
     private val publish: (DownloadProgress) -> Unit,
+    /** The game's files are in place: [relDir] and the names written there (ES-DE export hook). */
+    private val onPlaced: (DownloadEntity, String, List<String>) -> Unit = { _, _, _ -> },
 ) {
     /**
      * Why the engine asked this task to stop. The coroutine is deliberately NOT cancelled:
@@ -249,6 +251,7 @@ class DownloadTask(
             }
             part.delete()
             resultPath = gateway.displayPath(relDir)
+            runCatching { onPlaced(entity, relDir, res.topLevelNames) }
             for (name in res.topLevelNames) {
                 val isDir = gateway.list(relDir).firstOrNull { it.name == name }?.isDirectory ?: false
                 localLibrary.registerDownloaded(
@@ -272,6 +275,7 @@ class DownloadTask(
                 return TaskOutcome.Failed("move_size_mismatch", retryable = true)
             }
             resultPath = gateway.displayPath(relDir) + "/" + entity.fileName
+            runCatching { onPlaced(entity, relDir, listOf(entity.fileName)) }
             localLibrary.registerDownloaded(entity.platformSlug, joinRel(relDir, entity.fileName), entity.fileName, actual, false)
             // A game in its own folder counts as present under that folder's name. Not for an
             // extra: its folder is dlc/ or update/, and the game itself may not be there at all.

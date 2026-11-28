@@ -3,6 +3,7 @@ package com.rommmobile.app.core.storage
 import android.os.StatFs
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.io.OutputStream
 
 class DirectFileGateway(override val root: StorageRoot.Direct) : FileGateway {
@@ -30,6 +31,16 @@ class DirectFileGateway(override val root: StorageRoot.Direct) : FileGateway {
     override fun openOutput(relDir: String, name: String): OutputStream {
         ensureDir(relDir)
         return FileOutputStream(File(dir(relDir), name))
+    }
+
+    override fun openInput(relDir: String, name: String): InputStream? =
+        File(dir(relDir), name).takeIf { it.isFile }?.inputStream()
+
+    /** rename(2) replaces the destination in one step: readers see the old file or the new one. */
+    override fun replaceFile(relDir: String, tmpName: String, name: String): Boolean {
+        val tmp = File(dir(relDir), tmpName)
+        if (!tmp.isFile) return false
+        return tmp.renameTo(File(dir(relDir), name))
     }
 
     override fun moveIn(src: File, relDir: String, name: String): Boolean {
