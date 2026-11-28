@@ -126,11 +126,11 @@ class DownloadTask(
                     else -> null
                 }
                 val total = declaredTotal ?: entity.totalBytes
-                val serverName = parseContentDisposition(r.header("Content-Disposition"))
-                if (serverName != null && serverName != entity.fileName && entity.md5 == null) {
-                    dao.setFileName(entity.id, serverName)
-                    entity = entity.copy(fileName = serverName)
-                }
+                // entity.fileName is deliberately NOT refined from Content-Disposition. It comes from
+                // RomM's metadata (fs_name / file_name) at enqueue time and is the on-disk name: its
+                // extension decides extraction and hash verification below. The header is only the
+                // server's suggestion and has been seen to carry the game title instead, which
+                // saved "Wario Land 4 (USA, Europe).gba" as an extension-less "Wario Land 4".
                 if (total > 0) dao.setProgress(entity.id, existing, total)
                 entity = entity.copy(totalBytes = total)
 
@@ -303,15 +303,6 @@ class DownloadTask(
 
     private fun parseContentRangeTotal(header: String?): Long? =
         header?.substringAfter('/', "")?.trim()?.takeIf { it.isNotEmpty() && it != "*" }?.toLongOrNull()
-
-    private fun parseContentDisposition(header: String?): String? {
-        if (header == null) return null
-        Regex("filename\\*=(?:UTF-8|utf-8)''([^;]+)").find(header)?.groupValues?.get(1)?.let {
-            return runCatching { java.net.URLDecoder.decode(it.trim(), "UTF-8") }.getOrNull()?.substringAfterLast('/')?.takeIf { n -> n.isNotBlank() }
-        }
-        Regex("filename=\"?([^\";]+)\"?").find(header)?.groupValues?.get(1)?.let { return it.trim().substringAfterLast('/').takeIf { n -> n.isNotBlank() } }
-        return null
-    }
 
     /** Streaming md5 / sha1 / crc32 verifier; re-fed from disk on resume. */
     private class Hasher private constructor(private val algo: String, private val expected: String) {

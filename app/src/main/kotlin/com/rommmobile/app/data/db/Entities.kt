@@ -73,7 +73,7 @@ data class DownloadEntity(
     val title: String,
     val platformSlug: String,
     val platformName: String,
-    /** Final file name in the destination; may be refined from Content-Disposition. */
+    /** Final file name in the destination, taken from RomM metadata at enqueue time and never changed afterwards. */
     val fileName: String,
     val url: String,
     /** Destination directory relative to the storage root, e.g. `snes` or `psx/Final Fantasy VII`. */

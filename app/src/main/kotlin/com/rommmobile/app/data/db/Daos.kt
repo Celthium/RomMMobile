@@ -126,9 +126,6 @@ interface DownloadDao {
     @Query("UPDATE downloads SET downloadedBytes = :downloaded, totalBytes = :total, updatedAt = :now WHERE id = :id")
     suspend fun setProgress(id: Long, downloaded: Long, total: Long, now: Long = System.currentTimeMillis())
 
-    @Query("UPDATE downloads SET fileName = :fileName WHERE id = :id")
-    suspend fun setFileName(id: Long, fileName: String)
-
     @Query("UPDATE downloads SET state = 'COMPLETED', resultPath = :resultPath, completedAt = :now, updatedAt = :now, downloadedBytes = totalBytes WHERE id = :id")
     suspend fun complete(id: Long, resultPath: String, now: Long = System.currentTimeMillis())
 
